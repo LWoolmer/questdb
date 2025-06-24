@@ -355,7 +355,6 @@ JNIEXPORT jlong JNICALL Java_io_questdb_jit_FiltersCompiler_callFunction(JNIEnv 
                                                                          jlong rowsAddress,
                                                                          jlong rowsSize,
                                                                          jlong rowsStartOffset) {
-#ifndef __aarch64__
     auto fn = reinterpret_cast<CompiledFn>(fnAddress);
     return fn(reinterpret_cast<int64_t *>(colsAddress),
               colsSize,
@@ -365,7 +364,4 @@ JNIEXPORT jlong JNICALL Java_io_questdb_jit_FiltersCompiler_callFunction(JNIEnv 
               reinterpret_cast<int64_t *>(rowsAddress),
               rowsSize,
               rowsStartOffset);
-#else
-    return 0;
-#endif
 }
