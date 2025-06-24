@@ -82,6 +82,10 @@ public class CompiledFilter implements Closeable {
                     .put("JIT compilation failed [errorCode").put(error.errorCode())
                     .put(", msg=").put(error.message()).put("]");
         }
+        if (fnAddress == 0) {
+            throw SqlException.position(0)
+                    .put("JIT compilation failed, returned null filter");
+        }
         Unsafe.recordMemAlloc(1, MemoryTag.NATIVE_JIT);
     }
 }
