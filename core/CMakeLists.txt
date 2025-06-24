@@ -10,6 +10,9 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_CXX_VISIBILITY_PRESET hidden)
 set(CMAKE_C_VISIBILITY_PRESET hidden)
 
+
+find_package(JNI REQUIRED)
+
 # use this is for debug purposes
 #set(CMAKE_VERBOSE_MAKEFILE ON)
 
