@@ -94,7 +94,7 @@ struct Function {
             // c.add(adjusted_id, ptr(input_index, rows_id_start_offset)); // input_index + rows_id_start_offset
             // c.mov(qword_ptr(rows_ptr, output_index, 3), adjusted_id);
 
-            c.and_(mask.gp(), mask.gp(), 1);
+//            c.and_(mask.gp(), mask.gp(), 1);
             c.add(output_index, output_index, mask.gp().r64());
         }
         c.add(input_index, input_index, unroll_factor);
