@@ -69,6 +69,36 @@ enum class opcodes : int32_t {
     Rem,
 };
 
+#define OPCODE_STRING(op) \
+    case opcodes::op: return #op;
+
+inline const char *opcode_to_string(opcodes opcode) {
+    switch (opcode) {
+        OPCODE_STRING(Inv)
+        OPCODE_STRING(Ret)
+        OPCODE_STRING(Imm)
+        OPCODE_STRING(Mem)
+        OPCODE_STRING(Var)
+        OPCODE_STRING(Neg)
+        OPCODE_STRING(Not)
+        OPCODE_STRING(And)
+        OPCODE_STRING(Or)
+        OPCODE_STRING(Eq)
+        OPCODE_STRING(Ne)
+        OPCODE_STRING(Lt)
+        OPCODE_STRING(Le)
+        OPCODE_STRING(Gt)
+        OPCODE_STRING(Ge)
+        OPCODE_STRING(Add)
+        OPCODE_STRING(Sub)
+        OPCODE_STRING(Mul)
+        OPCODE_STRING(Div)
+        OPCODE_STRING(Rem)
+        default:
+            return "Unknown";
+    }
+}
+
 struct instruction_t {
     opcodes opcode;
     int32_t options;

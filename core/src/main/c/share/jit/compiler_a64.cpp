@@ -23,6 +23,7 @@
  ******************************************************************************/
 #include "common.h"
 #include "compiler.h"
+#include "neon.h"
 #include <asmjit/asmjit.h>
 #include <asmjit/a64.h>
 #include <iostream>
@@ -77,8 +78,8 @@ struct Function {
     };
 
     void scalar_tail(const instruction_t *istream, size_t size, bool null_check, const a64::Gp &stop, int unroll_factor = 1) {
-        Label l_loop = c.newLabel();
-        Label l_exit = c.newLabel();
+        Label l_loop = c.newNamedLabel("loop");
+        Label l_exit = c.newNamedLabel("exit");
 
         c.cmp(input_index, stop);
         c.b_gt(l_exit);
@@ -86,14 +87,13 @@ struct Function {
         c.bind(l_loop);
 
         for (int i = 0; i < unroll_factor; ++i) {
-            // questdb::a64::emit_code(c, istream, size, values, null_check, data_ptr, varsize_aux_ptr, vars_ptr, input_index);
+            questdb::neon::emit_code(c, istream, size, values, null_check, data_ptr, varsize_aux_ptr, vars_ptr, input_index);
+
+            a64::Gp adjusted_id = c.newGp(TypeId::kInt64);
+            c.add(adjusted_id, input_index, rows_id_start_offset);
+            c.str(adjusted_id, ptr(rows_ptr, output_index, arm::Shift(arm::ShiftOp::kLSL, 3)));
 
             auto mask = values.pop();
-
-            // a64::Gp adjusted_id = c.newInt64("input_index_+_rows_id_start_offset");
-            // c.add(adjusted_id, ptr(input_index, rows_id_start_offset)); // input_index + rows_id_start_offset
-            // c.mov(qword_ptr(rows_ptr, output_index, 3), adjusted_id);
-
             c.and_(mask.gp(), mask.gp(), 1);
             c.add(output_index, output_index, mask.gp().r64());
         }
@@ -107,7 +107,6 @@ struct Function {
     void scalar_loop(const instruction_t *istream, size_t size, bool null_check, int unroll_factor = 1) {
         if(unroll_factor > 1) {
             a64::Gp stop = c.newInt64("stop");
-            c.mov(stop, rows_size);
             c.sub(stop, stop, unroll_factor - 1);
             scalar_tail(istream, size, null_check, stop, unroll_factor);
             scalar_tail(istream, size, null_check, rows_size, 1);
@@ -227,13 +226,21 @@ Java_io_questdb_jit_FiltersCompiler_compileFunction(JNIEnv *e,
     code.setErrorHandler(&errorHandler);
 
     a64::Compiler c(&code);
-    if (debug) {
+    // if (debug) {
         c.addDiagnosticOptions(DiagnosticOptions::kRAAnnotate);
-    }
+    // }
 
     Function function(c);
 
     CompiledFn fn;
+
+    std::cout << "---------------------------------------------------------------------" << std::endl;
+    for (int i = 0; i < size; i++) {
+        const instruction_t * instr = reinterpret_cast<const instruction_t *>(filterAddress);
+        std::cout << "[" << opcode_to_string(instr[i].opcode) << "][" << instr[i].options << "] "
+                  << "lo: " << instr[i].ipayload.lo << ", hi: " << instr[i].ipayload.hi
+                  << ", dpayload: " << instr[i].dpayload << std::endl; 
+    }
 
     function.begin_fn();
     function.compile(reinterpret_cast<const instruction_t *>(filterAddress), size, options);
@@ -254,7 +261,9 @@ Java_io_questdb_jit_FiltersCompiler_compileFunction(JNIEnv *e,
     StringTmp<512> sb;
     Formatter::formatNodeList(sb, {}, &c);
 
-    std::cerr << "DEBUG: \n" << sb.data() << '\n';
+    std::cout << "---------------------------------------------------------------------" << std::endl;
+    std::cerr << sb.data() << '\n';
+    std::cout << "---------------------------------------------------------------------" << std::endl;
 
 
     if(err != ErrorCode::kErrorOk) {
