@@ -251,7 +251,7 @@ if (ARCH_AARCH64)
     )
 
     add_library(questdb-aarch64 OBJECT ${AARCH64_FILES})
-    target_compile_options(questdb-aarch64 PRIVATE "-fPIC"
+    target_compile_options(questdb-aarch64 PRIVATE "-fPIC" "-mcpu=native"
             "$<$<CONFIG:DEBUG>:${DEBUG_OPTIONS}>"
             "$<$<CONFIG:RELEASE>:${RELEASE_OPTIONS}>")
 
