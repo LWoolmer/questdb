@@ -25,6 +25,7 @@
 #include "compiler.h"
 #include <asmjit/asmjit.h>
 #include <asmjit/a64.h>
+#include <iostream>
 
 using namespace asmjit;
 
@@ -202,7 +203,11 @@ Java_io_questdb_jit_FiltersCompiler_compileFunction(JNIEnv *e,
                                                     jlong filterSize,
                                                     jint options,
                                                     jobject error) {
+
+    std::cerr << "test\n";
     auto size = static_cast<size_t>(filterSize) / sizeof(instruction_t);
+
+    std::cerr << "test2\n";
     if (filterAddress <= 0 || size <= 0) {
         fillJitErrorObject(e, error, ErrorCode::kErrorInvalidArgument, "Invalid argument passed");
         return 0;
@@ -210,59 +215,91 @@ Java_io_questdb_jit_FiltersCompiler_compileFunction(JNIEnv *e,
 
     CodeHolder code;
     code.init(gGlobalContext.rt.environment());
+
+    std::cerr << "test3\n";
     FILE *file = fopen("/root/.questdb/log/asmjit_last.log", "w");
+
+    std::cerr << "test4\n";
     FileLogger logger(file);
+
+    std::cerr << "test5\n";
     bool debug = options & 1;
+    debug = true;
     if (debug) {
+
+        std::cerr << "test6\n";
         logger.addFlags(FormatFlags::kRegCasts |
                         FormatFlags::kExplainImms);
         // logger.addFlags(FormatOptions::kFlagRegCasts |
         //                 FormatOptions::kFlagExplainImms |
         //                 FormatOptions::kFlagAnnotations);
+
+        std::cerr << "test7\n";
         code.setLogger(&logger);
+
+        std::cerr << "test8\n";
     }
 
     JitErrorHandler errorHandler;
+    std::cerr << "test9\n";
     code.setErrorHandler(&errorHandler);
+    std::cerr << "test10\n";
 
     a64::Compiler c(&code);
+    std::cerr << "test11\n";
     if (debug) {
+        std::cerr << "test12\n";
         c.addDiagnosticOptions(DiagnosticOptions::kRAAnnotate);
     }
 
+    std::cerr << "test13\n";
     Function function(c);
 
+    std::cerr << "test14\n";
     CompiledFn fn;
 
+    std::cerr << "test15\n";
     function.begin_fn();
+    std::cerr << "test16\n";
     function.compile(reinterpret_cast<const instruction_t *>(filterAddress), size, options);
+    std::cerr << "test17\n";
     function.end_fn();
 
+    std::cerr << "test18\n";
     Error err = errorHandler.error;
-
+    std::cerr << "test19\n";
     if(err == ErrorCode::kErrorOk) {
+        std::cerr << "test20\n";
         err = c.finalize();
     }
-
+    
+    std::cerr << "test21\n";
     if(err == ErrorCode::kErrorOk) {
+        std::cerr << "test22\n";
         err = gGlobalContext.rt.add(&fn, &code);
     }
 
+   std::cerr << "test23\n";
     StringTmp<512> sb;
+       std::cerr << "test24\n";
     Formatter::formatNodeList(sb, {}, &c);
+       std::cerr << "test25\n";
     logger.log(sb);
 
-    printf("%s", sb.data());
-    fprintf(file, "%s", sb.data());
+   std::cerr << "test26\n";
+    std::cerr << sb.data() << '\n';
 
-    fflush(logger.file());
-    pclose (file);
+    std::cerr << "test27\n";
 
+   std::cerr << "test30\n";
     if(err != ErrorCode::kErrorOk) {
+       std::cerr << "test31\n";
         fillJitErrorObject(e, error, err, errorHandler.message.data());
+           std::cerr << "test32\n";
         return 0;
     }
 
+   std::cerr << "test33\n";
     return reinterpret_cast<jlong>(fn);
 }
 
