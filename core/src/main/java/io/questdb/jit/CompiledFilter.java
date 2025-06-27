@@ -26,6 +26,8 @@ package io.questdb.jit;
 
 import io.questdb.cairo.vm.api.MemoryCARW;
 import io.questdb.griffin.SqlException;
+import io.questdb.log.Log;
+import io.questdb.log.LogFactory;
 import io.questdb.std.MemoryTag;
 import io.questdb.std.ThreadLocal;
 import io.questdb.std.Unsafe;
@@ -33,7 +35,7 @@ import io.questdb.std.Unsafe;
 import java.io.Closeable;
 
 public class CompiledFilter implements Closeable {
-
+    public static final Log LOG = LogFactory.getLog(CompiledFilter.class);
     private static final ThreadLocal<FiltersCompiler.JitError> tlJitError = new ThreadLocal<>(FiltersCompiler.JitError::new);
 
     private long fnAddress;
@@ -78,6 +80,8 @@ public class CompiledFilter implements Closeable {
         error.reset();
         fnAddress = FiltersCompiler.compileFunction(filterAddress, filterSize, options, error);
         if (error.errorCode() != 0) {
+            LOG.errorW().$("JIT compilation failed [errorCode").$(error.errorCode())
+                    .$(", msg=").$(error.message()).I$();
             throw SqlException.position(0)
                     .put("JIT compilation failed [errorCode").put(error.errorCode())
                     .put(", msg=").put(error.message()).put("]");
