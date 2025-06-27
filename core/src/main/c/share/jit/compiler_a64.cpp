@@ -72,7 +72,8 @@ struct Function {
 
         uint32_t type_size = (options >> 1) & 7; // 0 - 1B, 1 - 2B, 2 - 4B, 3 - 8B, 4 - 16B
         uint32_t exec_hint = (options >> 4) & 3; // 0 - scalar, 1 - single size type, 2 - mixed size types, ...
-        bool null_check = (options >> 6) & 1; // 1 - with null check
+        // bool null_check = (options >> 6) & 1; // 1 - with null check
+        bool null_check = false; // REVISIT null checking
         int unroll_factor = 1;
         scalar_loop(istream, size, null_check, unroll_factor);
     };
@@ -86,21 +87,23 @@ struct Function {
 
         c.bind(l_loop);
 
+        comment(c,     "------------------ Loop Begins ------------------");
         for (int i = 0; i < unroll_factor; ++i) {
+            comment(c, "------------ Emit code iteration: %d ------------");
             questdb::neon::emit_code(c, istream, size, values, null_check, data_ptr, varsize_aux_ptr, vars_ptr, input_index);
-
+            comment(c, "--------------- Adjusting index -----------------");
             a64::Gp adjusted_id = c.newGp(TypeId::kInt64);
             c.add(adjusted_id, input_index, rows_id_start_offset);
             c.str(adjusted_id, ptr(rows_ptr, output_index, arm::Shift(arm::ShiftOp::kLSL, 3)));
-
+            comment(c, "----------------- Applying mask -----------------");
             auto mask = values.pop();
             c.and_(mask.gp(), mask.gp(), 1);
             c.add(output_index, output_index, mask.gp().r64());
         }
         c.add(input_index, input_index, unroll_factor);
-
         c.cmp(input_index, stop);
         c.b_lt(l_loop); // input_index < stop
+        comment(c,     "------------------- Loop Ends -------------------");
         c.bind(l_exit);
     }
 

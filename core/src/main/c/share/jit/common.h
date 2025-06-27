@@ -130,9 +130,7 @@ struct jit_value_t {
 
     inline const asmjit::x86::Gpq &gp() const noexcept { return op_.as<asmjit::x86::Gpq>(); }
 #else
-    inline const asmjit::a64::Vec &q() const noexcept { return op_.as<asmjit::a64::Vec>(); }
-
-    inline const asmjit::a64::Vec &d() const noexcept { return op_.as<asmjit::a64::Vec>(); }
+    inline const asmjit::a64::Vec &vec() const noexcept { return op_.as<asmjit::a64::Vec>(); }
 
     inline const asmjit::a64::Gp &gp() const noexcept { return op_.as<asmjit::a64::Gp>(); }
 #endif
@@ -142,6 +140,12 @@ struct jit_value_t {
     inline data_kind_t dkind() const noexcept { return kind_; }
 
     inline const asmjit::Operand &op() const noexcept { return op_; }
+
+    inline const char *to_string(asmjit::BaseCompiler &c) const {
+        asmjit::StringTmp<512> sb;
+        asmjit::Formatter::formatOperand(sb, {}, &c, asmjit::Arch::kAArch64, op_);
+        return sb.data();
+    }
 
 private:
     asmjit::Operand op_;
@@ -172,6 +176,107 @@ inline data_kind_t dst_kind(const jit_value_t &lhs, const jit_value_t &rhs) {
     auto dk = (lhs.dkind() == data_kind_t::kConst && rhs.dkind() == data_kind_t::kConst) ? data_kind_t::kConst
                                                                                          : data_kind_t::kMemory;
     return dk;
+}
+
+#ifdef __aarch64__
+inline asmjit::a64::Vec arrange(asmjit::a64::Vec &vec, data_type_t type) {
+    switch (type) {
+        case data_type_t::i8:
+            return vec.b16();
+        case data_type_t::i16:
+            return vec.h8();
+        case data_type_t::i32:
+        case data_type_t::f32:
+            return vec.s4();
+        case data_type_t::i64:
+        case data_type_t::f64:
+            return vec.d2();
+        case data_type_t::i128:
+            return vec.q();
+        default:
+            __builtin_unreachable();
+    }
+}
+inline asmjit::a64::Gp arrange(asmjit::a64::Gp &gp, data_type_t type) {
+    switch (type) {
+        case data_type_t::i8:
+        case data_type_t::i16:
+        case data_type_t::i32:
+        case data_type_t::f32:
+            return gp.w();
+        case data_type_t::i64:
+        case data_type_t::f64:
+            return gp.x();
+        default:
+            __builtin_unreachable();
+    }
+    return gp;
+}
+
+inline asmjit::a64::Gp newArrangedGp(asmjit::a64::Compiler &c, data_type_t type) {
+    asmjit::a64::Gp gp;
+    switch (type) {
+        case data_type_t::i8:
+            gp = c.newGp(asmjit::TypeId::kInt8);
+            break;
+        case data_type_t::i16:
+            gp = c.newGp(asmjit::TypeId::kInt16);
+            break;
+        case data_type_t::i32:
+            gp = c.newGp(asmjit::TypeId::kInt32);
+        case data_type_t::f32:
+            gp = c.newGp(asmjit::TypeId::kFloat32);
+            break;
+        case data_type_t::i64:
+            gp = c.newGp(asmjit::TypeId::kInt64);
+        case data_type_t::f64:
+            gp = c.newGp(asmjit::TypeId::kFloat64);
+            break;
+        default:
+            __builtin_unreachable();
+    }
+    return arrange(gp, type);
+}
+
+inline asmjit::a64::Vec newArrangedVec(asmjit::a64::Compiler &c, data_type_t type) {
+    asmjit::a64::Vec vec;
+    switch (type) {
+        case data_type_t::i8:
+            vec = c.newVec(asmjit::TypeId::kInt8);
+            break;
+        case data_type_t::i16:
+            vec = c.newVec(asmjit::TypeId::kInt16);
+            break;
+        case data_type_t::i32:
+            vec = c.newVec(asmjit::TypeId::kInt32);
+            break;
+        case data_type_t::f32:
+            vec = c.newVec(asmjit::TypeId::kFloat32);
+            break;
+        case data_type_t::i64:
+            vec = c.newVec(asmjit::TypeId::kInt64);
+            break;
+        case data_type_t::f64:
+            vec = c.newVec(asmjit::TypeId::kFloat64);
+            break;
+        // REVISIT 128bit arranged vectors
+        // case data_type_t::i128:
+        //     vec = c.newVec(asmjit::TypeId::kInt128);
+        //     break;
+        default:
+            __builtin_unreachable();
+    }
+    return arrange(vec, type);
+}
+#endif 
+
+inline void comment(asmjit::BaseCompiler &c, const char *fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    char buffer[256];
+    vsnprintf(buffer, sizeof(buffer), fmt, args);
+    c.comment(buffer);
+    va_end(args);
 }
 
 #endif //QUESTDB_JIT_COMMON_H

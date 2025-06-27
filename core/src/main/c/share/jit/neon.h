@@ -26,22 +26,23 @@
 #define QUESTDB_JIT_NEON_H
 
 #include "common.h"
-// #include "impl/neon.h"
+#include "impl/neon.h"
 
 namespace questdb::neon {
     using namespace asmjit;
     using namespace asmjit::a64;
+    using namespace asmjit::arm;
 
-    // data_type_t mask_type(data_type_t type) {
-    //     switch (type) {
-    //         case data_type_t::f32:
-    //             return data_type_t::i32;
-    //         case data_type_t::f64:
-    //             return data_type_t::i64;
-    //         default:
-    //             return type;
-    //     }
-    // }
+    data_type_t mask_type(data_type_t type) {
+        switch (type) {
+            case data_type_t::f32:
+                return data_type_t::i32;
+            case data_type_t::f64:
+                return data_type_t::i64;
+            default:
+                return type;
+        }
+    }
 
     // inline static void unrolled_loop2(Compiler &c,
     //                                   const Gp &bits,
@@ -240,114 +241,93 @@ namespace questdb::neon {
     //     return {headers_2_3, data_type_t::i64, data_kind_t::kMemory};
     // }
 
-    // jit_value_t
-    // read_mem(Compiler &c, data_type_t type, int32_t column_idx, const Gp &data_ptr, const Gp &varsize_aux_ptr, const Gp &input_index) {
-    //     if (type == data_type_t::varchar_header) {
-    //         return read_mem_varchar_header(c, column_idx, varsize_aux_ptr, input_index);
-    //     }
+    jit_value_t
+    read_mem(Compiler &c, data_type_t type, int32_t column_idx, const Gp &data_ptr, const Gp &varsize_aux_ptr, const Gp &input_index) {
+        if (type == data_type_t::varchar_header) {
+            __builtin_unreachable();
+            // return read_mem_varchar_header(c, column_idx, varsize_aux_ptr, input_index);
+        }
 
-    //     uint32_t header_size;
-    //     switch (type) {
-    //         case data_type_t::string_header:
-    //             header_size = 4;
-    //             break;
-    //         case data_type_t::binary_header:
-    //             header_size = 8;
-    //             break;
-    //         default:
-    //             header_size = 0;
-    //     }
-    //     if (header_size != 0) {
-    //         return read_mem_varsize(c, header_size, column_idx, data_ptr, varsize_aux_ptr, input_index);
-    //     }
+        uint32_t header_size;
+        switch (type) {
+            case data_type_t::string_header:
+                header_size = 4;
+                break;
+            case data_type_t::binary_header:
+                header_size = 8;
+                break;
+            default:
+                header_size = 0;
+        }
+        if (header_size != 0) {
+            __builtin_unreachable();
+            // return read_mem_varsize(c, header_size, column_idx, data_ptr, varsize_aux_ptr, input_index);
+        }
 
-    //     // Simple case: a fixed-width column
+        // Simple case: a fixed-width column
 
-    //     Gp column_address = c.newInt64("column_address");
-    //     c.mov(column_address, ptr(data_ptr, 8 * column_idx, 8));
+        Gp column_address = c.newInt64();
+        Gp column_index = c.newInt32();
+        c.mov(column_index, 8 * column_idx);
+        c.str(column_address, ptr(data_ptr, column_index, Shift(ShiftOp::kLSL, 8)));
 
-    //     Mem m;
-    //     uint32_t shift = type_shift(type);
-    //     if (shift < 4) {
-    //         m = ymmword_ptr(column_address, input_index, shift);
-    //     } else {
-    //         Gp offset = c.newInt64("row_offset");
-    //         c.mov(offset, input_index);
-    //         c.sal(offset, shift);
-    //         m = ymmword_ptr(column_address, offset, 0);
-    //     }
-    //     Ymm row_data = c.newYmm();
-    //     switch (type) {
-    //         case data_type_t::i8:
-    //         case data_type_t::i16:
-    //         case data_type_t::i32:
-    //         case data_type_t::i64:
-    //         case data_type_t::i128:
-    //             c.vmovdqu(row_data, m);
-    //             break;
-    //         case data_type_t::f32:
-    //             c.vmovups(row_data, m);
-    //             break;
-    //         case data_type_t::f64:
-    //             c.vmovupd(row_data, m);
-    //             break;
-    //         default:
-    //             __builtin_unreachable();
-    //     }
-    //     return {row_data, type, data_kind_t::kMemory};
-    // }
+        Mem mem = ptr(column_address, input_index, Shift(ShiftOp::kLSL, type_shift(type)));
+            
+        Vec row_data = newArrangedVec(c, type);
+        switch (type) {
+            case data_type_t::i8:
+            case data_type_t::i16:
+            case data_type_t::i32:
+            case data_type_t::f32:
+            case data_type_t::i64:
+            case data_type_t::f64:
+                c.ld1r(row_data, mem);
+                break;
+            case data_type_t::i128:
+                c.ldr(row_data, mem);
+                break;
+            default:
+                __builtin_unreachable();
+        }
+        return {row_data, type, data_kind_t::kMemory};
+    }
 
     jit_value_t read_imm(Compiler &c, const instruction_t &instr) {
         const auto scope = ConstPoolScope::kLocal;
         auto type = static_cast<data_type_t>(instr.options);
 
-        Vec val;
-        Gp imm;
+        Vec val = newArrangedVec(c, type);
+        Gp imm  = newArrangedGp(c, type);
 
         switch (type) {
             case data_type_t::i8:
-                val = c.newVec(TypeId::kInt8);
-                imm = c.newGp(TypeId::kInt8);
                 c.mov(imm, static_cast<int8_t>(instr.ipayload.lo));
-                c.dup(val.b16(), imm);
                 break;
             case data_type_t::i16:
-                val = c.newVec(TypeId::kInt16);
-                imm = c.newGp(TypeId::kInt16);
                 c.mov(imm, static_cast<int16_t>(instr.ipayload.lo));
-                c.dup(val.h8(), imm);
                 break;
             case data_type_t::i32:
-                val = c.newVec(TypeId::kInt32);
-                imm = c.newGp(TypeId::kInt32);
                 c.mov(imm, static_cast<int32_t>(instr.ipayload.lo));
-                c.dup(val.s4(), imm);
                 break;
             case data_type_t::i64:
-                val = c.newVec(TypeId::kInt64);
-                imm = c.newGp(TypeId::kInt64);
+                // REVISIT 64bit imm imm
                 c.mov(imm, static_cast<int64_t>(instr.ipayload.lo));
-                c.dup(val.d2(), imm);
                 break;
             case data_type_t::f32:
-                val = c.newVec(TypeId::kFloat32);
-                imm = c.newGp(TypeId::kFloat32);
                 c.mov(imm, static_cast<float>(instr.ipayload.lo));
-                c.dup(val.s4(), imm);
                 break;
             case data_type_t::f64:
-                val = c.newVec(TypeId::kFloat64);
-                imm = c.newGp(TypeId::kFloat64);
+                // REVISIT 64bit imm
                 c.mov(imm, static_cast<double>(instr.ipayload.lo));
-                c.dup(val.d2(), imm);
                 break;
             case data_type_t::i128:
-                // REVISIT
-                c.dup(val.q(), imm);
+                // REVISIT 128bit imm
                 break;
             default:
                 __builtin_unreachable();
         }
+
+        c.dup(val, imm);
 
         return {val, type, data_kind_t::kConst};
     }
@@ -403,12 +383,12 @@ namespace questdb::neon {
     //     return {cmp_ge(c, dt, lhs.ymm(), rhs.ymm(), null_check), mt, dk};
     // }
 
-    // jit_value_t cmp_lt(Compiler &c, const jit_value_t &lhs, const jit_value_t &rhs, bool null_check) {
-    //     auto dt = lhs.dtype();
-    //     auto dk = dst_kind(lhs, rhs);
-    //     auto mt = mask_type(dt);
-    //     return {cmp_lt(c, dt, lhs.ymm(), rhs.ymm(), null_check), mt, dk};
-    // }
+    jit_value_t cmp_lt(Compiler &c, const jit_value_t &lhs, const jit_value_t &rhs, bool null_check) {
+        auto dt = lhs.dtype();
+        auto dk = dst_kind(lhs, rhs);
+        auto mt = mask_type(dt);
+        return {cmp_lt(c, dt, lhs.vec(), rhs.vec(), null_check), mt, dk};
+    }
 
     // jit_value_t cmp_le(Compiler &c, const jit_value_t &lhs, const jit_value_t &rhs, bool null_check) {
     //     auto dt = lhs.dtype();
@@ -441,8 +421,9 @@ namespace questdb::neon {
     //     return {div(c, dt, lhs.ymm(), rhs.ymm(), null_check), dt, dk};
     // }
 
-    // inline std::pair<jit_value_t, jit_value_t>
-    // convert(Compiler &c, const jit_value_t &lhs, const jit_value_t &rhs, bool null_check) {
+    inline std::pair<jit_value_t, jit_value_t>
+    convert(Compiler &c, const jit_value_t &lhs, const jit_value_t &rhs, bool null_check) {
+    // REVISIT int/float conversions
     //     // data_type_t::i32 -> data_type_t::f32
     //     // data_type_t::i64 -> data_type_t::f64
     //     switch (lhs.dtype()) {
@@ -487,66 +468,67 @@ namespace questdb::neon {
     //         default:
     //             break;
     //     }
-    //     return std::make_pair(lhs, rhs);
-    // }
+        return std::make_pair(lhs, rhs);
+    }
 
-    // inline jit_value_t get_argument(ZoneStack<jit_value_t> &values) {
-    //     auto arg = values.pop();
-    //     return arg;
-    // }
+    inline jit_value_t get_argument(ZoneStack<jit_value_t> &values) {
+        auto arg = values.pop();
+        return arg;
+    }
 
-    // inline std::pair<jit_value_t, jit_value_t>
-    // get_arguments(Compiler &c, ZoneStack<jit_value_t> &values, bool ncheck) {
-    //     auto lhs = values.pop();
-    //     auto rhs = values.pop();
-    //     return convert(c, lhs, rhs, ncheck);
-    // }
+    inline std::pair<jit_value_t, jit_value_t>
+    get_arguments(Compiler &c, ZoneStack<jit_value_t> &values, bool ncheck) {
+        auto lhs = values.pop();
+        auto rhs = values.pop();
+        return convert(c, lhs, rhs, ncheck);
+    }
 
-    // void emit_bin_op(Compiler &c, const instruction_t &instr, ZoneStack<jit_value_t> &values, bool ncheck) {
-    //     auto args = get_arguments(c, values, ncheck);
-    //     auto lhs = args.first;
-    //     auto rhs = args.second;
-    //     switch (instr.opcode) {
-    //         case opcodes::And:
-    //             values.append(bin_and(c, lhs, rhs));
-    //             break;
-    //         case opcodes::Or:
-    //             values.append(bin_or(c, lhs, rhs));
-    //             break;
-    //         case opcodes::Eq:
-    //             values.append(cmp_eq(c, lhs, rhs));
-    //             break;
-    //         case opcodes::Ne:
-    //             values.append(cmp_ne(c, lhs, rhs));
-    //             break;
-    //         case opcodes::Gt:
-    //             values.append(cmp_gt(c, lhs, rhs, ncheck));
-    //             break;
-    //         case opcodes::Ge:
-    //             values.append(cmp_ge(c, lhs, rhs, ncheck));
-    //             break;
-    //         case opcodes::Lt:
-    //             values.append(cmp_lt(c, lhs, rhs, ncheck));
-    //             break;
-    //         case opcodes::Le:
-    //             values.append(cmp_le(c, lhs, rhs, ncheck));
-    //             break;
-    //         case opcodes::Add:
-    //             values.append(add(c, lhs, rhs, ncheck));
-    //             break;
-    //         case opcodes::Sub:
-    //             values.append(sub(c, lhs, rhs, ncheck));
-    //             break;
-    //         case opcodes::Mul:
-    //             values.append(mul(c, lhs, rhs, ncheck));
-    //             break;
-    //         case opcodes::Div:
-    //             values.append(div(c, lhs, rhs, ncheck));
-    //             break;
-    //         default:
-    //             __builtin_unreachable();
-    //     }
-    // }
+    void emit_bin_op(Compiler &c, const instruction_t &instr, ZoneStack<jit_value_t> &values, bool ncheck) {
+        auto args = get_arguments(c, values, ncheck);
+        auto lhs = args.first;
+        auto rhs = args.second;
+        comment(c, "---------- [%s] %s, %s, ncheck=%d", opcode_to_string(instr.opcode), lhs.to_string(c), rhs.to_string(c), ncheck ? 1 : 0);
+        switch (instr.opcode) {
+            // case opcodes::And:
+            //     values.append(bin_and(c, lhs, rhs));
+            //     break;
+            // case opcodes::Or:
+            //     values.append(bin_or(c, lhs, rhs));
+            //     break;
+            // case opcodes::Eq:
+            //     values.append(cmp_eq(c, lhs, rhs));
+            //     break;
+            // case opcodes::Ne:
+            //     values.append(cmp_ne(c, lhs, rhs));
+            //     break;
+            // case opcodes::Gt:
+            //     values.append(cmp_gt(c, lhs, rhs, ncheck));
+            //     break;
+            // case opcodes::Ge:
+            //     values.append(cmp_ge(c, lhs, rhs, ncheck));
+            //     break;
+            case opcodes::Lt:
+                values.append(cmp_lt(c, lhs, rhs, ncheck));
+                break;
+            // case opcodes::Le:
+            //     values.append(cmp_le(c, lhs, rhs, ncheck));
+            //     break;
+            // case opcodes::Add:
+            //     values.append(add(c, lhs, rhs, ncheck));
+            //     break;
+            // case opcodes::Sub:
+            //     values.append(sub(c, lhs, rhs, ncheck));
+            //     break;
+            // case opcodes::Mul:
+            //     values.append(mul(c, lhs, rhs, ncheck));
+            //     break;
+            // case opcodes::Div:
+            //     values.append(div(c, lhs, rhs, ncheck));
+            //     break;
+            default:
+                __builtin_unreachable();
+        }
+    }
 
     void
     emit_code(Compiler &c, const instruction_t *istream, size_t size, ZoneStack<jit_value_t> &values, bool ncheck,
@@ -561,16 +543,19 @@ namespace questdb::neon {
                 case opcodes::Var: {
                     auto type = static_cast<data_type_t>(instr.options);
                     auto idx = static_cast<int32_t>(instr.ipayload.lo);
+                    comment(c, "---------- [Var][%d] idx=%d", type, idx);
                     // values.append(read_vars_mem(c, type, idx, vars_ptr));
                 }
                     break;
                 case opcodes::Mem: {
                     auto type = static_cast<data_type_t>(instr.options);
                     auto idx = static_cast<int32_t>(instr.ipayload.lo);
-                    // values.append(read_mem(c, type, idx, data_ptr, varsize_aux_ptr, input_index));
+                    comment(c, "---------- [Mem][%d] idx=%d", static_cast<int>(type), idx);
+                    values.append(read_mem(c, type, idx, data_ptr, varsize_aux_ptr, input_index));
                 }
                     break;
                 case opcodes::Imm:
+                    comment(c, "---------- [Imm][%d] hi=%d, lo=%d", static_cast<int>(instr.options), instr.ipayload.hi, instr.ipayload.lo);
                     values.append(read_imm(c, instr));
                     break;
                 case opcodes::Neg:
@@ -580,7 +565,7 @@ namespace questdb::neon {
                     // values.append(bin_not(c, get_argument(values)));
                     break;
                 default:
-                    // emit_bin_op(c, instr, values, ncheck);
+                    emit_bin_op(c, instr, values, ncheck);
                     break;
             }
         }
