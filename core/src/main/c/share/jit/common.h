@@ -41,6 +41,26 @@ enum class data_type_t : uint8_t {
     varchar_header
 };
 
+#define DATA_TYPE_STRING(op) \
+    case data_type_t::op: return #op;
+
+inline const char *data_type_to_string(data_type_t types) {
+    switch (types) {
+        DATA_TYPE_STRING(i8)
+        DATA_TYPE_STRING(i16)
+        DATA_TYPE_STRING(i32)
+        DATA_TYPE_STRING(f32)
+        DATA_TYPE_STRING(i64)
+        DATA_TYPE_STRING(f64)
+        DATA_TYPE_STRING(i128)
+        DATA_TYPE_STRING(string_header)
+        DATA_TYPE_STRING(binary_header)
+        DATA_TYPE_STRING(varchar_header)
+        default:
+            return "Unknown";
+    }
+}
+
 enum class data_kind_t : uint8_t {
     kMemory,
     kConst,
@@ -109,6 +129,21 @@ struct instruction_t {
         } ipayload;
         double dpayload;
     };
+
+    void to_string(char* buf) const {
+        data_type_t type = static_cast<data_type_t>(options);
+        if (opcode == opcodes::Imm) {
+            if (type == data_type_t::f32 || type == data_type_t::f64) {
+                sprintf(buf, "[%s] (%s) %f", opcode_to_string(opcode), data_type_to_string(type), dpayload);
+            } else {
+                sprintf(buf, "[%s] (%s) %ld %ld", opcode_to_string(opcode), data_type_to_string(type), ipayload.hi, ipayload.lo);
+            }
+        } else if ((opcode == opcodes::Mem) || (opcode == opcodes::Var)) {
+            sprintf(buf, "[%s] (%s) %ld", opcode_to_string(opcode), data_type_to_string(type), ipayload.lo);
+        } else {
+            sprintf(buf, "[%s]", opcode_to_string(opcode));
+        }
+    }
 };
 
 struct jit_value_t {
@@ -130,9 +165,17 @@ struct jit_value_t {
 
     inline const asmjit::x86::Gpq &gp() const noexcept { return op_.as<asmjit::x86::Gpq>(); }
 #else
+    inline bool                   isVec() const noexcept { return op_.isVec(); }
     inline const asmjit::a64::Vec &vec() const noexcept { return op_.as<asmjit::a64::Vec>(); }
 
+    inline bool                   isGp() const noexcept { return op_.isGp(); }
     inline const asmjit::a64::Gp &gp() const noexcept { return op_.as<asmjit::a64::Gp>(); }
+
+    inline bool                   isImm() const noexcept { return op_.isImm(); }
+    inline const asmjit::Imm      &imm() const noexcept { return op_.as<asmjit::Imm>(); }
+
+    inline bool                   isMem() const noexcept { return op_.isMem(); }
+    inline const asmjit::a64::Mem &mem() const noexcept { return op_.as<asmjit::a64::Mem>(); }
 #endif
 
     inline data_type_t dtype() const noexcept { return type_; }
@@ -177,98 +220,6 @@ inline data_kind_t dst_kind(const jit_value_t &lhs, const jit_value_t &rhs) {
                                                                                          : data_kind_t::kMemory;
     return dk;
 }
-
-#ifdef __aarch64__
-inline asmjit::a64::Vec arrange(asmjit::a64::Vec &vec, data_type_t type) {
-    switch (type) {
-        case data_type_t::i8:
-            return vec.b16();
-        case data_type_t::i16:
-            return vec.h8();
-        case data_type_t::i32:
-        case data_type_t::f32:
-            return vec.s4();
-        case data_type_t::i64:
-        case data_type_t::f64:
-            return vec.d2();
-        case data_type_t::i128:
-            return vec.q();
-        default:
-            __builtin_unreachable();
-    }
-}
-inline asmjit::a64::Gp arrange(asmjit::a64::Gp &gp, data_type_t type) {
-    switch (type) {
-        case data_type_t::i8:
-        case data_type_t::i16:
-        case data_type_t::i32:
-        case data_type_t::f32:
-            return gp.w();
-        case data_type_t::i64:
-        case data_type_t::f64:
-            return gp.x();
-        default:
-            __builtin_unreachable();
-    }
-    return gp;
-}
-
-inline asmjit::a64::Gp newArrangedGp(asmjit::a64::Compiler &c, data_type_t type) {
-    asmjit::a64::Gp gp;
-    switch (type) {
-        case data_type_t::i8:
-            gp = c.newGp(asmjit::TypeId::kInt8);
-            break;
-        case data_type_t::i16:
-            gp = c.newGp(asmjit::TypeId::kInt16);
-            break;
-        case data_type_t::i32:
-            gp = c.newGp(asmjit::TypeId::kInt32);
-        case data_type_t::f32:
-            gp = c.newGp(asmjit::TypeId::kFloat32);
-            break;
-        case data_type_t::i64:
-            gp = c.newGp(asmjit::TypeId::kInt64);
-        case data_type_t::f64:
-            gp = c.newGp(asmjit::TypeId::kFloat64);
-            break;
-        default:
-            __builtin_unreachable();
-    }
-    return arrange(gp, type);
-}
-
-inline asmjit::a64::Vec newArrangedVec(asmjit::a64::Compiler &c, data_type_t type) {
-    asmjit::a64::Vec vec;
-    switch (type) {
-        case data_type_t::i8:
-            vec = c.newVec(asmjit::TypeId::kInt8);
-            break;
-        case data_type_t::i16:
-            vec = c.newVec(asmjit::TypeId::kInt16);
-            break;
-        case data_type_t::i32:
-            vec = c.newVec(asmjit::TypeId::kInt32);
-            break;
-        case data_type_t::f32:
-            vec = c.newVec(asmjit::TypeId::kFloat32);
-            break;
-        case data_type_t::i64:
-            vec = c.newVec(asmjit::TypeId::kInt64);
-            break;
-        case data_type_t::f64:
-            vec = c.newVec(asmjit::TypeId::kFloat64);
-            break;
-        // REVISIT 128bit arranged vectors
-        // case data_type_t::i128:
-        //     vec = c.newVec(asmjit::TypeId::kInt128);
-        //     break;
-        default:
-            __builtin_unreachable();
-    }
-    return arrange(vec, type);
-}
-#endif 
 
 inline void comment(asmjit::BaseCompiler &c, const char *fmt, ...) {
     va_list args;

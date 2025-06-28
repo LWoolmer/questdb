@@ -23,12 +23,14 @@
  ******************************************************************************/
 #include "common.h"
 #include "compiler.h"
-#include "neon.h"
+#include "a64.h"
+// #include "neon.h"
 #include <asmjit/asmjit.h>
 #include <asmjit/a64.h>
 #include <iostream>
 
 using namespace asmjit;
+using namespace asmjit::a64;
 
 struct JitErrorHandler : public ErrorHandler {
     JitErrorHandler()
@@ -74,54 +76,60 @@ struct Function {
         uint32_t exec_hint = (options >> 4) & 3; // 0 - scalar, 1 - single size type, 2 - mixed size types, ...
         // bool null_check = (options >> 6) & 1; // 1 - with null check
         bool null_check = false; // REVISIT null checking
-        int unroll_factor = 1;
-        scalar_loop(istream, size, null_check, unroll_factor);
+        scalar_loop(istream, size, null_check);
     };
 
-    void scalar_tail(const instruction_t *istream, size_t size, bool null_check, const a64::Gp &stop, int unroll_factor = 1) {
+    void scalar_loop(const instruction_t *istream, size_t size, bool null_check) {
         Label l_loop = c.newNamedLabel("loop");
         Label l_exit = c.newNamedLabel("exit");
-
-        c.cmp(input_index, stop);
-        c.b_gt(l_exit);
+        
+        comment(c, "-------------------------------------------------------");
+        comment(c, "| Catch if input_index >= rows_size                   |");
+        comment(c, "-------------------------------------------------------");
+        c.cmp(input_index, rows_size);
+        c.b_ge(l_exit);
 
         c.bind(l_loop);
 
-        comment(c,     "------------------ Loop Begins ------------------");
-        for (int i = 0; i < unroll_factor; ++i) {
-            comment(c, "------------ Emit code iteration: %d ------------");
-            questdb::neon::emit_code(c, istream, size, values, null_check, data_ptr, varsize_aux_ptr, vars_ptr, input_index);
-            comment(c, "--------------- Adjusting index -----------------");
-            a64::Gp adjusted_id = c.newGp(TypeId::kInt64);
-            c.add(adjusted_id, input_index, rows_id_start_offset);
-            c.str(adjusted_id, ptr(rows_ptr, output_index, arm::Shift(arm::ShiftOp::kLSL, 3)));
-            comment(c, "----------------- Applying mask -----------------");
-            auto mask = values.pop();
-            c.and_(mask.gp(), mask.gp(), 1);
-            c.add(output_index, output_index, mask.gp().r64());
-        }
-        c.add(input_index, input_index, unroll_factor);
-        c.cmp(input_index, stop);
-        c.b_lt(l_loop); // input_index < stop
-        comment(c,     "------------------- Loop Ends -------------------");
-        c.bind(l_exit);
-    }
+        comment(c, "-------------------------------------------------------");
+        comment(c, "| Execute the instruction stream                      |");
+        comment(c, "-------------------------------------------------------");
 
-    void scalar_loop(const instruction_t *istream, size_t size, bool null_check, int unroll_factor = 1) {
-        if(unroll_factor > 1) {
-            a64::Gp stop = c.newInt64("stop");
-            c.sub(stop, stop, unroll_factor - 1);
-            scalar_tail(istream, size, null_check, stop, unroll_factor);
-            scalar_tail(istream, size, null_check, rows_size, 1);
-        } else {
-            scalar_tail(istream, size, null_check, rows_size, 1);
-        }
+        questdb::a64::emit_code(c, istream, size, values, null_check, data_ptr, varsize_aux_ptr, vars_ptr, input_index);
+
+        Gp select_row = values.pop().gp().r64();
+        Gp row_id = c.newGp(TypeId::kInt64, "row_id");
+        
+        comment(c, "-------------------------------------------------------");
+        comment(c, "| Store the row_id at rows_ptr[output_index]          |");
+        comment(c, "-------------------------------------------------------");
+        c.add(row_id, rows_id_start_offset, input_index);
+        c.str(row_id, ptr(rows_ptr, output_index, arm::Shift(arm::ShiftOp::kLSL, 3)));
+        
+        comment(c, "-------------------------------------------------------");
+        comment(c, "| If the row was selected, increment output_index     |");
+        comment(c, "-------------------------------------------------------");
+        c.and_(select_row, select_row, 1); // Ensure select_row is 0 or 1
+        c.add(output_index, output_index, select_row); // output_index += select_row
+
+        comment(c, "-------------------------------------------------------");
+        comment(c, "| Loop back if input_index++ < rows_size              |");
+        comment(c, "-------------------------------------------------------");
+        c.add(input_index, input_index, 1);
+        c.cmp(input_index, rows_size);
+        c.b_lt(l_loop); // input_index < rows_size
+        c.bind(l_exit);
+
+        comment(c, "-------------------------------------------------------");
+        comment(c, "| Return the output_index                             |");
+        comment(c, "-------------------------------------------------------");
         c.ret(output_index);
     }
 
     void begin_fn() {
         c.addFunc(FuncSignature::build<int64_t, int64_t *, int64_t, int64_t *, int64_t, int64_t *, int64_t, int64_t *, int64_t, int64_t>(
             CallConvId::kCDecl));
+        #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
         data_ptr = c.newIntPtr("data_ptr");
         data_size = c.newInt64("data_size");
 
@@ -295,7 +303,9 @@ JNIEXPORT jlong JNICALL Java_io_questdb_jit_FiltersCompiler_callFunction(JNIEnv 
                                                                          jlong rowsSize,
                                                                          jlong rowsStartOffset) {
     auto fn = reinterpret_cast<CompiledFn>(fnAddress);
-    return fn(reinterpret_cast<int64_t *>(colsAddress),
+    printf("---------------------------------------------------------------------------\n");
+    printf("Calling JIT function at address: %p\n", reinterpret_cast<void *>(fnAddress));
+    auto ret = fn(reinterpret_cast<int64_t *>(colsAddress),
               colsSize,
               reinterpret_cast<int64_t *>(varSizeIndexesAddress),
               reinterpret_cast<int64_t *>(varsAddress),
@@ -303,4 +313,7 @@ JNIEXPORT jlong JNICALL Java_io_questdb_jit_FiltersCompiler_callFunction(JNIEnv 
               reinterpret_cast<int64_t *>(rowsAddress),
               rowsSize,
               rowsStartOffset);
+    printf("returned: %ld\n", ret);
+    printf("---------------------------------------------------------------------------\n");
+    return ret;
 }
