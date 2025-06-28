@@ -92,7 +92,7 @@ struct Function {
 
         c.bind(l_loop);
 
-        comment(c,     "------------------ Loop Begins ------------------");
+        comment(c,     "------------------ Tail Begins -----------------");
         for (int i = 0; i < unroll_factor; ++i) {
             comment(c, "------------ Emit code iteration: %d ------------");
             questdb::x86::emit_code(c, istream, size, values, null_check, data_ptr, varsize_aux_ptr, vars_ptr, input_index);
@@ -111,20 +111,27 @@ struct Function {
 
         c.cmp(input_index, stop);
         c.jl(l_loop); // input_index < stop
-        comment(c,     "------------------- Loop Ends -------------------");
+        comment(c,     "------------------- Tail Ends -------------------");
         c.bind(l_exit);
     }
 
     void scalar_loop(const instruction_t *istream, size_t size, bool null_check, int unroll_factor = 1) {
+        comment(c,     "------------------ Loop Begins ------------------");
         if(unroll_factor > 1) {
+            comment(c,     "----------------- Unroll Begins ----------------");
             x86::Gp stop = c.newInt64("stop");
+            comment(c,     "----------------- Unroll Begins ----------------");
             c.mov(stop, rows_size);
             c.sub(stop, unroll_factor - 1);
+            comment(c,     "------------------ Tail Unroll ----------------");
             scalar_tail(istream, size, null_check, stop, unroll_factor);
+            comment(c,     "----------------- Tail Last ---------------");
             scalar_tail(istream, size, null_check, rows_size, 1);
         } else {
+            comment(c,     "------------------ Tail Last ----------------");
             scalar_tail(istream, size, null_check, rows_size, 1);
         }
+        comment(c,     "------------------- Loop Ends -------------------");
         c.ret(output_index);
     }
 
@@ -134,6 +141,7 @@ struct Function {
         Label l_loop = c.newLabel();
         Label l_exit = c.newLabel();
 
+        comment(c,     "------------------ AVX2 Begins ------------------");
         c.xor_(input_index, input_index); //input_index = 0
 
         Gp stop = c.newGpq();
@@ -143,28 +151,36 @@ struct Function {
         c.cmp(input_index, stop);
         c.jge(l_exit);
 
-
+        comment(c,     "------------------ rows_ids ------------------");
         Ymm row_ids_reg = c.newYmm("rows_ids");
         Ymm row_ids_step = c.newYmm("rows_ids_step");
 
         //mask compress optimization for longs
         //init row_ids_reg out of loop
         if (step == 4) {
+            comment(c,     "------------------ Step was 4 ------------------");
             int64_t rows_id_mem[4] = {0, 1, 2, 3};
+             comment(c,     "------------------ Create new const pool ------------------");
             Mem mem = c.newConst(ConstPoolScope::kLocal, &rows_id_mem, 32);
 
+            comment(c,     "------------------ mov, broadcast, add ------------------");
             c.vmovq(row_ids_reg.xmm(), rows_id_start_offset);
             c.vpbroadcastq(row_ids_reg, row_ids_reg.xmm());
             c.vpaddq(row_ids_reg, row_ids_reg, mem);
 
+            comment(c,     "------------------ Step on stack ------------------");
             int64_t step_data[4] = {step, step, step, step};
+            comment(c,     "------------------ Point const pool to stack ------------------");
             Mem stem_mem = c.newConst(ConstPoolScope::kLocal, &step_data, 32);
+           comment(c,     "------------------ Store mem ------------------");
             c.vmovdqu(row_ids_step, stem_mem);
         }
 
+        comment(c,     "------------------ Bind ------------------");
         c.bind(l_loop);
 
         for (int i = 0; i < unroll_factor; ++i) {
+            comment(c,     "------------------ AVX2 emit ------------------");
             questdb::avx2::emit_code(c, istream, size, values, null_check, data_ptr, varsize_aux_ptr, vars_ptr, input_index);
 
             auto mask = values.pop();
@@ -172,25 +188,31 @@ struct Function {
             //mask compress optimization for longs
             bool is_slow_zen = CpuInfo::host().familyId() == 23; // AMD Zen1, Zen1+ and Zen2
             if (step == 4 && !is_slow_zen) {
+                comment(c,     "------------------ Fastzen start ------------------");
                 Ymm compacted = questdb::avx2::compress_register(c, row_ids_reg, mask.ymm());
                 c.vmovdqu(ymmword_ptr(rows_ptr, output_index, 3), compacted);
                 Gp bits = questdb::avx2::to_bits4(c, mask.ymm());
                 c.popcnt(bits, bits);
                 c.add(output_index, bits.r64());
                 c.vpaddq(row_ids_reg, row_ids_reg, row_ids_step);
+                 comment(c,     "------------------ Fastzen end ------------------");
             } else {
                 Gp bits = questdb::avx2::to_bits(c, mask.ymm(), step);
                 questdb::avx2::unrolled_loop2(c, bits.r64(), rows_ptr, input_index, output_index, rows_id_start_offset,
                                               step);
             }
+             comment(c,     "------------------ step forward ------------------");
             c.add(input_index, step); // index += step
         }
 
+        comment(c,     "------------------ Loop condition ------------------");
         c.cmp(input_index, stop);
         c.jl(l_loop); // index < stop
         c.bind(l_exit);
 
+        comment(c,     "------------------ Tail ------------------");
         scalar_tail(istream, size, null_check, rows_size);
+         comment(c,     "------------------ AVX2 Ends ------------------");
         c.ret(output_index);
     }
 
