@@ -22,10 +22,6 @@
  *
  ******************************************************************************/
 
-#include "compiler.h"
-#include "x86.h"
-#include "avx2.h"
-
 #ifdef __aarch64__
 #include "compiler_a64.cpp"
 #else
