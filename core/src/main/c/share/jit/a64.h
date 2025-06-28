@@ -147,7 +147,15 @@ namespace questdb::a64 {
         Vec vec;
         switch (type) {
             case data_type_t::i8:
+                gp = c.newInt32();
+                c.ldrsb(gp, mem);
+                return {gp, type, data_kind_t::kMemory};
+
             case data_type_t::i16: 
+                gp = c.newInt32();
+                c.ldrsh(gp, mem);
+                return {gp, type, data_kind_t::kMemory};
+
             case data_type_t::i32: 
                 gp = c.newInt32();
                 c.ldr(gp, mem);
@@ -351,23 +359,31 @@ namespace questdb::a64 {
     //     }
     // }
 
-    // jit_value_t bin_not(Compiler &c, const jit_value_t &lhs) {
-    //     auto dt = lhs.dtype();
-    //     auto dk = lhs.dkind();
-    //     return {int32_not(c, lhs.gp().r32()), dt, dk};
-    // }
+    jit_value_t bin_not(Compiler &c, const jit_value_t &lhs) {
+        auto dt = lhs.dtype();
+        auto dk = lhs.dkind();
+        Gp lhs_gp = lhs.gp().r32();
+        c.eor(lhs_gp, lhs_gp, -1);
+        return {lhs_gp, dt, dk};
+    }
 
-    // jit_value_t bin_and(Compiler &c, const jit_value_t &lhs, const jit_value_t &rhs) {
-    //     auto dt = lhs.dtype();
-    //     auto dk = dst_kind(lhs, rhs);
-    //     return {int32_and(c, lhs.gp().r32(), rhs.gp().r32()), dt, dk};
-    // }
+    jit_value_t bin_and(Compiler &c, const jit_value_t &lhs, const jit_value_t &rhs) {
+        auto dt = lhs.dtype();
+        auto dk = dst_kind(lhs, rhs);
+        Gp lhs_gp = lhs.gp().r32();
+        Gp rhs_gp = rhs.gp().r32();
+        c.and_(lhs_gp, lhs_gp, rhs_gp);
+        return {lhs_gp, dt, dk};
+    }
 
-    // jit_value_t bin_or(Compiler &c, const jit_value_t &lhs, const jit_value_t &rhs) {
-    //     auto dt = lhs.dtype();
-    //     auto dk = dst_kind(lhs, rhs);
-    //     return {int32_or(c, lhs.gp().r32(), rhs.gp().r32()), dt, dk};
-    // }
+    jit_value_t bin_or(Compiler &c, const jit_value_t &lhs, const jit_value_t &rhs) {
+        auto dt = lhs.dtype();
+        auto dk = dst_kind(lhs, rhs);
+        Gp lhs_gp = lhs.gp().r32();
+        Gp rhs_gp = rhs.gp().r32();
+        c.orr(lhs_gp, lhs_gp, rhs_gp);
+        return {lhs_gp, dt, dk};
+    }
 
     // jit_value_t add(Compiler &c, const jit_value_t &lhs, const jit_value_t &rhs, bool null_check) {
     //     auto dt = lhs.dtype();
@@ -583,12 +599,12 @@ namespace questdb::a64 {
         jit_value_t lhs = args.first;
         jit_value_t rhs = args.second;
         switch (instr.opcode) {
-            // case opcodes::And:
-            //     values.append(bin_and(c, lhs, rhs));
-            //     break;
-            // case opcodes::Or:
-            //     values.append(bin_or(c, lhs, rhs));
-            //     break;
+            case opcodes::And:
+                values.append(bin_and(c, lhs, rhs));
+                break;
+            case opcodes::Or:
+                values.append(bin_or(c, lhs, rhs));
+                break;
             case opcodes::Eq:
                 values.append(cmp(c, lhs, rhs, CondCode::kEQ, null_check));
                 break;
@@ -620,6 +636,7 @@ namespace questdb::a64 {
             //     values.append(div(c, lhs, rhs, null_check));
             //     break;
             default:
+                assert(false);
                 __builtin_unreachable();
         }
     }

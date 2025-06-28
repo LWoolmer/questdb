@@ -33,23 +33,6 @@ namespace questdb::a64 {
     using namespace asmjit::a64;
     using namespace asmjit::arm;
 
-    // inline Gpd int32_not(Compiler &c, const Gpd &b) {
-    //     c.not_(b);
-    //     return b;
-    // }
-
-    // inline Gpd int32_and(Compiler &c, const Gpd &b1, const Gpd &b2) {
-    //     c.and_(b1, b2);
-    //     return b1;
-    // }
-
-    // inline Gpd int32_or(Compiler &c, const Gpd &b1, const Gpd &b2) {
-    //     c.comment("int32_or_start");
-    //     c.or_(b1, b2);
-    //     c.comment("int32_or_stop");
-    //     return b1;
-    // }
-
     inline Gp to_int64(Compiler &c, const Gp &gp, bool check_null) {
         Gp gp64 = c.newInt64();
         c.sxtw(gp64, gp);
