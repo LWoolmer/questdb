@@ -24,6 +24,7 @@
 #include "compiler.h"
 #include "x86.h"
 #include "avx2.h"
+#include <iostream>
 
 using namespace asmjit;
 
@@ -91,15 +92,18 @@ struct Function {
 
         c.bind(l_loop);
 
+        comment(c,     "------------------ Loop Begins ------------------");
         for (int i = 0; i < unroll_factor; ++i) {
+            comment(c, "------------ Emit code iteration: %d ------------");
             questdb::x86::emit_code(c, istream, size, values, null_check, data_ptr, varsize_aux_ptr, vars_ptr, input_index);
 
             auto mask = values.pop();
 
+            comment(c, "--------------- Adjusting index -----------------");
             x86::Gp adjusted_id = c.newInt64("input_index_+_rows_id_start_offset");
             c.lea(adjusted_id, ptr(input_index, rows_id_start_offset)); // input_index + rows_id_start_offset
             c.mov(qword_ptr(rows_ptr, output_index, 3), adjusted_id);
-
+            comment(c, "----------------- Applying mask -----------------");
             c.and_(mask.gp(), 1);
             c.add(output_index, mask.gp().r64());
         }
@@ -107,6 +111,7 @@ struct Function {
 
         c.cmp(input_index, stop);
         c.jl(l_loop); // input_index < stop
+        comment(c,     "------------------- Loop Ends -------------------");
         c.bind(l_exit);
     }
 
@@ -309,6 +314,15 @@ Java_io_questdb_jit_FiltersCompiler_compileFunction(JNIEnv *e,
 
     CompiledFn fn;
 
+    std::cout << "---------------------------------------------------------------------" << std::endl;
+    for (int i = 0; i < size; i++) {
+        const instruction_t * instr = reinterpret_cast<const instruction_t *>(filterAddress);
+        std::cout << "[" << opcode_to_string(instr[i].opcode) << "][" << instr[i].options << "] "
+                  << "lo: " << instr[i].ipayload.lo << ", hi: " << instr[i].ipayload.hi
+                  << ", dpayload: " << instr[i].dpayload << std::endl;
+    }
+
+
     function.begin_fn();
     function.compile(reinterpret_cast<const instruction_t *>(filterAddress), size, options);
     function.end_fn();
@@ -324,6 +338,13 @@ Java_io_questdb_jit_FiltersCompiler_compileFunction(JNIEnv *e,
     }
 
     fflush(logger.file());
+
+     StringTmp<512> sb;
+        Formatter::formatNodeList(sb, {}, &c);
+
+        std::cout << "---------------------------------------------------------------------" << std::endl;
+        std::cerr << sb.data() << '\n';
+        std::cout << "---------------------------------------------------------------------" << std::endl;
 
     if(err != ErrorCode::kErrorOk) {
         fillJitErrorObject(e, error, err, errorHandler.message.data());
