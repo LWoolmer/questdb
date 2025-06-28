@@ -366,13 +366,11 @@ namespace questdb::avx2 {
             case data_type_t::f32: {
                 Ymm neq = mask_not(c, cmp_eq_float(c, type, lhs, rhs));
                 c.vcmpps(dst, lhs, rhs, VCmpImm::kLT_OS);
-                // c.vcmpps(dst, lhs, rhs, Predicate::kCmpLT);
                 return mask_and(c, dst, neq);
             }
             case data_type_t::f64: {
                 Ymm neq = mask_not(c, cmp_eq_double(c, type, lhs, rhs));
                 c.vcmppd(dst, lhs, rhs, VCmpImm::kLT_OS);
-                // c.vcmppd(dst, lhs, rhs, Predicate::kCmpLT);
                 return mask_and(c, dst, neq);
             }
             default:
@@ -426,7 +424,6 @@ namespace questdb::avx2 {
                 Ymm eq = cmp_eq_float(c, type, lhs, rhs);
                 Ymm dst = c.newYmm();
                 c.vcmpps(dst.ymm(), lhs.ymm(), rhs.ymm(), VCmpImm::kLE_OS);
-                // c.vcmpps(dst.ymm(), lhs.ymm(), rhs.ymm(), Predicate::kCmpLE);
                 return mask_or(c, dst, eq);
             }
             case data_type_t::f64: {

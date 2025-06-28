@@ -627,7 +627,7 @@ namespace questdb::x86 {
 
     inline Gpd double_lt(Compiler &c, const Xmm &lhs, const Xmm &rhs) {
         Gp r = c.newInt32();
-        c.cmpsd(lhs, rhs, CmpImm::kLT);
+        c.cmpsd(lhs, rhs, VCmpImm::kLT_OS);
         c.movd(r, lhs);
         c.neg(r);
         return r.as<Gpd>();
@@ -635,7 +635,7 @@ namespace questdb::x86 {
 
     inline Gpd double_le(Compiler &c, const Xmm &lhs, const Xmm &rhs) {
         Gp r = c.newInt32();
-        c.cmpsd(lhs, rhs, CmpImm::kLE);
+        c.cmpsd(lhs, rhs, VCmpImm::kLE_OS);
         c.movd(r, lhs);
         c.neg(r);
         return r.as<Gpd>();
@@ -643,7 +643,7 @@ namespace questdb::x86 {
 
     inline Gpd double_gt(Compiler &c, const Xmm &lhs, const Xmm &rhs) {
         Gp r = c.newInt32();
-        c.cmpsd(rhs, lhs, CmpImm::kLT);
+        c.cmpsd(rhs, lhs, VCmpImm::kLT_OS);
         c.movd(r, rhs);
         c.neg(r);
         return r.as<Gpd>();
@@ -651,7 +651,7 @@ namespace questdb::x86 {
 
     inline Gpd double_ge(Compiler &c, const Xmm &lhs, const Xmm &rhs) {
         Gp r = c.newInt32();
-        c.cmpsd(rhs, lhs, CmpImm::kLE);
+        c.cmpsd(rhs, lhs, VCmpImm::kLE_OS);
         c.movd(r, rhs);
         c.neg(r);
         return r.as<Gpd>();
@@ -676,7 +676,7 @@ namespace questdb::x86 {
 
     inline Gpd float_lt(Compiler &c, const Xmm &lhs, const Xmm &rhs) {
         Gp r = c.newInt32();
-        c.cmpss(lhs, rhs, CmpImm::kLT);
+        c.cmpss(lhs, rhs, VCmpImm::kLT_OS);
         c.movd(r, lhs);
         c.neg(r);
         return r.as<Gpd>();
@@ -684,7 +684,7 @@ namespace questdb::x86 {
 
     inline Gpd float_le(Compiler &c, const Xmm &lhs, const Xmm &rhs) {
         Gp r = c.newInt32();
-        c.cmpss(lhs, rhs, CmpImm::kLE);
+        c.cmpss(lhs, rhs, VCmpImm::kLE_OS);
         c.movd(r, lhs);
         c.neg(r);
         return r.as<Gpd>();
@@ -692,7 +692,7 @@ namespace questdb::x86 {
 
     inline Gpd float_gt(Compiler &c, const Xmm &lhs, const Xmm &rhs) {
         Gp r = c.newInt32();
-        c.cmpss(rhs, lhs, CmpImm::kLT);
+        c.cmpss(rhs, lhs, VCmpImm::kLT_OS);
         c.movd(r, rhs);
         c.neg(r);
         return r.as<Gpd>();
@@ -701,7 +701,7 @@ namespace questdb::x86 {
     inline Gpd float_ge(Compiler &c, const Xmm &lhs, const Xmm &rhs) {
         c.comment("float_ge_start");
         Gp r = c.newInt32();
-        c.cmpss(rhs, lhs, CmpImm::kLE);
+        c.cmpss(rhs, lhs, VCmpImm::kLE_OS);
         c.movd(r, rhs);
         c.neg(r);
         c.comment("float_ge_stop");
