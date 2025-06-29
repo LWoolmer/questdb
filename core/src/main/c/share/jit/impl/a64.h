@@ -34,7 +34,7 @@ namespace questdb::a64 {
     using namespace asmjit::arm;
 
     inline void cmp_null(Compiler &c, const Gp &gp) {
-        comment(c, "cmp_null(vec)");
+        comment(c, "cmp_null(gp)");
         if (gp.isGp64()) {
             Gp null = c.newInt64();
             c.mov(null, LONG_NULL);
@@ -365,23 +365,33 @@ namespace questdb::a64 {
     //     return lhs;
     // }
 
-    inline Gp cmp(Compiler &c, const Gp &lhs, const Gp &rhs, CondCode cond, bool check_null) {
+    // REVISIT not optimized
+ inline Gp cmp(Compiler &c, const Gp &lhs, const Gp &rhs, CondCode cond, bool check_null) {
         comment(c, "cmp(gp)");
-        Gp cmp = c.newInt32();
 
+        Gp result = c.newInt32();
         c.cmp(lhs, rhs);
-        c.cset(cmp, cond);
+        c.cset(result, cond);
 
-        if (check_null && (cond != CondCode::kNE) && (cond != CondCode::kEQ)) {
-            Gp z = c.newInt32();
-            c.mov(z, 0);
-            cmp_null(c, lhs);
-            c.csel(cmp, cmp, z, CondCode::kNE);
-            cmp_null(c, rhs);
-            c.csel(cmp, cmp, z, CondCode::kNE);
+        if (!check_null || (cond == CondCode::kEQ) || (cond == CondCode::kNE)) {
+            return result;
         }
 
-        return cmp;
+        // check_null && (LT || LE || GT || GE)
+
+        Gp lhs_null = c.newInt32();
+        Gp rhs_null = c.newInt32();
+
+        cmp_null(c, lhs);
+        c.cset(lhs_null, CondCode::kEQ);
+        cmp_null(c, rhs);
+        c.cset(rhs_null, CondCode::kEQ);
+
+        c.eor(lhs_null, lhs_null, rhs_null);
+        c.mvn(lhs_null, lhs_null);
+
+        c.and_(result, result, lhs_null);
+        return result;
     }
 
     // REVISIT not optimized
