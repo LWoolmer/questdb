@@ -111,8 +111,10 @@ namespace questdb::a64 {
         Vec fp = c.newVecS();
         c.scvtf(fp, gp);
         if (check_null) {
+            Gp gpnan = c.newInt32();
             Vec nan = c.newVecS();
-            c.fmov(fp, FLOAT_NAN);
+            c.mov(gpnan, FLOAT_NAN);
+            c.fmov(nan, gpnan);
             cmp_null(c, gp);
             c.fcsel(fp, fp, nan, CondCode::kNE);
         }
@@ -123,8 +125,10 @@ namespace questdb::a64 {
         Vec fp = c.newVecD();
         c.scvtf(fp, gp);
         if (check_null) {
-            Vec nan = c.newVecS();
-            c.fmov(fp, DOUBLE_NAN);
+            Gp gpnan = c.newInt64();
+            Vec nan = c.newVecD();
+            c.mov(gpnan, DOUBLE_NAN);
+            c.fmov(nan, gpnan);
             cmp_null(c, gp);
             c.fcsel(fp, fp, nan, CondCode::kNE);
         }
