@@ -33,42 +33,83 @@ namespace questdb::a64 {
     using namespace asmjit::a64;
     using namespace asmjit::arm;
 
+    inline void cmp_null(Compiler &c, const Gp &gp) {
+        if (gp.isGp64()) {
+            Gp null = c.newInt64();
+            c.mov(null, LONG_NULL);
+            c.cmp(gp, null);
+        } else {
+            Gp null = c.newInt32();
+            c.mov(null, INT_NULL);
+            c.cmp(gp, null);
+        }
+    }
+
+    inline void cmp_null(Compiler &c, const Vec &fp) {
+        if (fp.isVec32()) {
+            Gp gp = c.newInt32();
+            Vec null = c.newVecS();
+            c.fmov(fp, gp);
+            c.and_(gp, gp, FLOAT_NAN);
+            c.cmp(gp, gp, FLOAT_NAN);
+        } else if (fp.isVec64()) {
+            Gp gp = c.newInt64();
+            Vec null = c.newVecD();
+            c.fmov(fp, gp);
+            c.and_(gp, gp, DOUBLE_NAN);
+            c.cmp(gp, gp, DOUBLE_NAN);
+        } else {
+            fprintf(stderr, "Unsupported vector type for null comparison\n");
+            __builtin_unreachable();
+        }
+    }
+
     inline Gp to_int64(Compiler &c, const Gp &gp, bool check_null) {
         Gp gp64 = c.newInt64();
         c.sxtw(gp64, gp);
+        if (check_null) {
+            Gp null = c.newInt64();
+            c.mov(null, LONG_NULL);
+            cmp_null(c, gp);
+            c.csel(gp64, gp64, null, CondCode::kNE);
+        }
         return gp64;
-
-        // REVISIT int->int conversion check_null
     }
 
     inline Gp to_int64(Compiler &c, const Vec &fp) {
         Gp gp64 = c.newInt64();
         c.fcvtzs(gp64, fp);
         return gp64;
-
-        // REVISIT float->int conversion check_null
     }
 
     inline Vec to_float(Compiler &c, const Gp &gp, bool check_null) {
         Vec fp = c.newVecS();
         c.scvtf(fp, gp);
+        if (check_null) {
+            Vec nan = c.newVecS();
+            c.fmov(fp, FLOAT_NAN);
+            cmp_null(c, gp);
+            c.fcsel(fp, fp, nan, CondCode::kNE);
+        }
         return fp;
-
-        // REVISIT int->float conversion check_null
     }
 
     inline Vec to_double(Compiler &c, const Gp &gp, bool check_null) {
         Vec fp = c.newVecD();
         c.scvtf(fp, gp);
+        if (check_null) {
+            Vec nan = c.newVecS();
+            c.fmov(fp, DOUBLE_NAN);
+            cmp_null(c, gp);
+            c.fcsel(fp, fp, nan, CondCode::kNE);
+        }
         return fp;
-        // REVISIT int->double conversion check_null
     }
 
     inline Vec to_double(Compiler &c, const Vec &fps) {
         Vec fpd = c.newVecD();
         c.fcvt(fpd, fps);
         return fpd;
-        // REVISIT float->double conversion check_null
     }
 
     // inline void check_int32_null(Compiler &c, const Gp &dst, const Gpd &lhs, const Gpd &rhs) {
@@ -300,24 +341,74 @@ namespace questdb::a64 {
     // }
 
     inline Gp cmp(Compiler &c, const Gp &lhs, const Gp &rhs, CondCode cond, bool check_null) {
+        Gp cmp = c.newInt32();
+
         c.cmp(lhs, rhs);
-
-        if (check_null) {
-            // REVISIT non-int null comparison
-            c.ccmp(lhs, INT_NULL, 0, CondCode::kNE);
-            c.ccmp(rhs, INT_NULL, 0, CondCode::kNE);
-        }
-
-        Gp cmp = c.newSimilarReg(lhs);
         c.cset(cmp, cond);
+
+        if (check_null && (cond != CondCode::kNE) && (cond != CondCode::kEQ)) {
+            Gp z = c.newInt32();
+            c.mov(z, 0);
+            cmp_null(c, lhs);
+            c.csel(cmp, cmp, z, CondCode::kNE);
+            cmp_null(c, rhs);
+            c.csel(cmp, cmp, z, CondCode::kNE);
+        }
 
         return cmp;
     }
 
-    inline Gp cmp(Compiler &c, const Vec &lhs, const Vec &rhs, CondCode cond, bool check_null) {
-        assert(false);
-        __builtin_unreachable();
-        // REVISIT cmp floating point and 128b
+    // REVISIT not optimized
+    inline Gp cmp(Compiler &c, const Vec &lhs, const Vec &rhs, CondCode cond) {
+        Label exit = c.newNamedLabel("exit");
+
+        Gp cmp = c.newInt32();
+        c.mov(cmp, 1);
+
+        Gp lhs_null = c.newInt32();
+        Gp rhs_null = c.newInt32();
+
+        cmp_null(c, lhs);
+        c.cset(lhs_null, CondCode::kEQ);
+
+        cmp_null(c, rhs);
+        c.cset(rhs_null, CondCode::kEQ);
+
+        // Set cmp = 1 if both are null
+        c.and_(cmp, lhs_null, rhs_null);
+        if (cond == CondCode::kNE || cond == CondCode::kLT || cond == CondCode::kGT) {
+            // Reverse the return value if the condition is NE
+            c.mvn(cmp, cmp);
+        }
+        // If either are null, then return immediately
+        c.cbnz(lhs_null, "exit");
+        c.cbnz(rhs_null, "exit");
+
+        Vec diff = c.newSimilarReg(lhs);
+        c.fsub(diff, lhs, rhs);
+        c.fabs(diff, diff);
+
+        if (lhs.isVec32()) {
+            c.fcmp(diff, FLOAT_EPSILON);
+        } else {
+            c.fcmp(diff, DOUBLE_EPSILON);
+        }
+
+        // Set cmp = 1 if diff < epsilon
+        c.cset(cmp, CondCode::kLE);
+        if (cond == CondCode::kNE || cond == CondCode::kLT || cond == CondCode::kGT) {
+            // Reverse the return value if the condition is NE
+            c.mvn(cmp, cmp);
+        }
+
+        if (cond == CondCode::kLT || cond == CondCode::kLE || cond == CondCode::kGT || cond == CondCode::kGE) {
+            c.b_le(exit);
+            c.fcmp(lhs, rhs);
+            c.cset(cmp, cond);
+        }
+
+        c.bind(exit);
+        return cmp;
     }
 
 }

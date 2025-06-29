@@ -151,36 +151,36 @@ namespace questdb::a64 {
                 c.ldrsb(gp, mem);
                 return {gp, type, data_kind_t::kMemory};
 
-            case data_type_t::i16: 
+            case data_type_t::i16:
                 gp = c.newInt32();
                 c.ldrsh(gp, mem);
                 return {gp, type, data_kind_t::kMemory};
 
-            case data_type_t::i32: 
+            case data_type_t::i32:
                 gp = c.newInt32();
                 c.ldr(gp, mem);
                 return {gp, type, data_kind_t::kMemory};
 
-            case data_type_t::i64: 
+            case data_type_t::i64:
                 gp = c.newInt64();
                 c.ldr(gp, mem);
                 return {gp, type, data_kind_t::kMemory};
-        
+
             case data_type_t::i128:
                 vec = c.newVecQ();
                 c.ldr(vec, mem);
                 return {vec, type, data_kind_t::kMemory};
 
-            case data_type_t::f32: 
+            case data_type_t::f32:
                 vec = c.newVecS();
                 c.ldr(vec, mem);
                 return {vec, type, data_kind_t::kMemory};
 
-            case data_type_t::f64: 
+            case data_type_t::f64:
                 vec = c.newVecD();
                 c.ldr(vec, mem);
                 return {vec, type, data_kind_t::kMemory};
-                
+
             default:
                 __builtin_unreachable();
         }
@@ -194,7 +194,7 @@ namespace questdb::a64 {
             case data_type_t::i32:
             case data_type_t::i64:
                 return {imm(instr.ipayload.lo), type, data_kind_t::kConst};
-        
+
             // REVISIT 128bit imm
             // case data_type_t::i128: {
             //     return {
@@ -207,7 +207,7 @@ namespace questdb::a64 {
             case data_type_t::f32:
             case data_type_t::f64:
                 return {imm(instr.dpayload), type, data_kind_t::kConst};
-        
+
             default:
                 assert(false);
                 __builtin_unreachable();
@@ -219,7 +219,7 @@ namespace questdb::a64 {
         Vec vec;
         Gp gp;
         Mem mem;
-        
+
         if (imm.isInt()) {
             auto value = imm.valueAs<int64_t>();
             switch (dst_type) {
@@ -334,7 +334,7 @@ namespace questdb::a64 {
             case data_type_t::i128:
             case data_type_t::f32:
             case data_type_t::f64:
-                return {cmp(c, lhs.vec(), rhs.vec(), cond, null_check), lhs.dtype(), dst_kind(lhs, rhs)};
+                return {cmp(c, lhs.vec(), rhs.vec(), cond), lhs.dtype(), dst_kind(lhs, rhs)};
             default:
                 __builtin_unreachable();
         }
@@ -582,16 +582,44 @@ namespace questdb::a64 {
     }
 
     inline jit_value_t get_argument(Compiler &c, ZoneStack<jit_value_t> &values) {
-        auto arg = values.pop();
-        return load_register(c, arg);
+        char buf_arg[512];
+        char buf_loaded[512];
+        jit_value_t arg = values.pop();
+        arg.to_string(buf_arg);
+        jit_value_t loaded = load_register(c, arg);
+        loaded.to_string(buf_loaded);
+        comment(c, "%s  -->  %s", buf_arg, buf_loaded);
+        return loaded;
     }
 
     inline std::pair<jit_value_t, jit_value_t>
     get_arguments(Compiler &c, ZoneStack<jit_value_t> &values, bool null_check) {
+        char buf_lhs[512];
+        char buf_lhs_loaded[512];
+        char buf_lhs_converted[512];
+        char buf_rhs[512];
+        char buf_rhs_loaded[512];
+        char buf_rhs_converted[512];
+
         auto lhs = values.pop();
         auto rhs = values.pop();
+        lhs.to_string(buf_lhs);
+        rhs.to_string(buf_rhs);
+
         auto args = load_registers(c, lhs, rhs);
-        return convert(c, args.first, args.second, null_check);
+        args.first.to_string(buf_lhs_loaded);
+        args.second.to_string(buf_rhs_loaded);
+
+        auto converted_args = convert(c, args.first, args.second, null_check);
+
+        converted_args.first.to_string(buf_lhs_converted);
+        converted_args.second.to_string(buf_rhs_converted);
+
+        comment(c, "%s  -->  %s  -->  %s", buf_lhs, buf_lhs_loaded, buf_lhs_converted);
+        comment(c, "%s  -->  %s  -->  %s", buf_rhs, buf_rhs_loaded, buf_rhs_converted);
+        comment(c, " ");
+
+        return converted_args;
     }
 
     void emit_bin_op(Compiler &c, const instruction_t &instr, ZoneStack<jit_value_t> &values, bool null_check) {

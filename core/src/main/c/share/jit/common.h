@@ -28,6 +28,9 @@
 #include <asmjit/asmjit.h>
 #include <asmjit/a64.h>
 
+const int32_t FLOAT_NAN = 0x7fc00000;
+const int64_t DOUBLE_NAN = 0x7ff8000000000000LL;
+
 enum class data_type_t : uint8_t {
     i8,
     i16,
@@ -157,6 +160,10 @@ struct jit_value_t {
     inline jit_value_t(const jit_value_t &other) noexcept = default;
 
     inline jit_value_t &operator=(const jit_value_t &other) noexcept = default;
+
+    void to_string(char* buf) const {
+        sprintf(buf, "%d (%s)", op_.id(), data_type_to_string(type_));
+    }
 
 #ifndef __aarch64__
     inline const asmjit::x86::Ymm &ymm() const noexcept { return op_.as<asmjit::x86::Ymm>(); }

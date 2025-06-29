@@ -74,8 +74,7 @@ struct Function {
 
         uint32_t type_size = (options >> 1) & 7; // 0 - 1B, 1 - 2B, 2 - 4B, 3 - 8B, 4 - 16B
         uint32_t exec_hint = (options >> 4) & 3; // 0 - scalar, 1 - single size type, 2 - mixed size types, ...
-        // bool null_check = (options >> 6) & 1; // 1 - with null check
-        bool null_check = false; // REVISIT null checking
+        bool null_check = (options >> 6) & 1; // 1 - with null check
         scalar_loop(istream, size, null_check);
     };
 
