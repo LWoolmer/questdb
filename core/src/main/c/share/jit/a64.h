@@ -27,7 +27,7 @@
 
 #include "common.h"
 #include "impl/a64.h"
-#include <cassert>
+#include <stdexcept>
 
 namespace questdb::a64 {
     using namespace asmjit;
@@ -111,7 +111,10 @@ namespace questdb::a64 {
             const Gp &varsize_aux_ptr, const Gp &input_index
     ) {
         if (type == data_type_t::varchar_header) {
-            assert(false); // REVISIT varchar_readmem
+            throw std::runtime_error(
+                "Reading varchar_header from memory is not supported on A64"
+            );
+            __builtin_unreachable();
             // return read_mem_varchar_header(c, column_idx, varsize_aux_ptr, input_index);
         }
 
@@ -127,7 +130,10 @@ namespace questdb::a64 {
                 header_size = 0;
         }
         if (header_size != 0) {
-            assert(false); // REVISIT varchar_readmem
+            throw std::runtime_error(
+                "Reading varsize from memory is not supported on A64"
+            );
+            __builtin_unreachable();
             // return read_mem_varsize(c, header_size, column_idx, data_ptr, varsize_aux_ptr, input_index);
         }
 
@@ -182,6 +188,9 @@ namespace questdb::a64 {
                 return {vec, type, data_kind_t::kMemory};
 
             default:
+                throw std::runtime_error(
+                    "Unsupported data type for mem2reg: " + std::string(data_type_to_string(type))
+                );
                 __builtin_unreachable();
         }
     }
@@ -209,7 +218,9 @@ namespace questdb::a64 {
                 return {imm(instr.dpayload), type, data_kind_t::kConst};
 
             default:
-                assert(false);
+                throw std::runtime_error(
+                    "Unsupported data type for immediate: " + std::string(data_type_to_string(type))
+                );
                 __builtin_unreachable();
         }
     }
@@ -226,7 +237,6 @@ namespace questdb::a64 {
                 case data_type_t::f32:
                     vec = c.newVecS();
                     mem = c.newFloatConst(ConstPoolScope::kLocal, static_cast<float>(value));
-                    c.ldr(vec, mem);
                     return {vec, dst_type, data_kind_t::kConst};
 
                 case data_type_t::f64:
@@ -262,7 +272,7 @@ namespace questdb::a64 {
 
                 case data_type_t::f64:
                     vec = c.newVecD();
-                    mem = c.newFloatConst(ConstPoolScope::kLocal, static_cast<float>(value));
+                    mem = c.newDoubleConst(ConstPoolScope::kLocal, static_cast<double>(value));
                     c.ldr(vec, mem);
                     return {vec, dst_type, data_kind_t::kConst};
 
@@ -336,6 +346,9 @@ namespace questdb::a64 {
             case data_type_t::f64:
                 return {cmp(c, lhs.vec(), rhs.vec(), cond), lhs.dtype(), dst_kind(lhs, rhs)};
             default:
+                throw std::runtime_error(
+                    "Unsupported data type for lhs of cmp: " + std::string(data_type_to_string(dt))
+                );
                 __builtin_unreachable();
         }
     }
@@ -495,6 +508,9 @@ namespace questdb::a64 {
                                         data_type_t::f64,
                                         lhs.dkind()), rhs);
                     default:
+                        throw std::runtime_error(
+                            "Unsupported data types for convert: " + std::string(data_type_to_string(lhs.dtype())) + " " + std::string(data_type_to_string(rhs.dtype()))
+                        );
                         __builtin_unreachable();
                 }
                 break;
@@ -520,6 +536,9 @@ namespace questdb::a64 {
                                 jit_value_t(to_double(c, lhs.gp().r64(), null_check), data_type_t::f64, lhs.dkind()),
                                 rhs);
                     default:
+                        throw std::runtime_error(
+                            "Unsupported data types for convert: " + std::string(data_type_to_string(lhs.dtype())) + " " + std::string(data_type_to_string(rhs.dtype()))
+                        );
                         __builtin_unreachable();
                 }
                 break;
@@ -543,6 +562,9 @@ namespace questdb::a64 {
                         return std::make_pair(jit_value_t(to_double(c, lhs.vec().v32()), data_type_t::f64, lhs.dkind()),
                                               rhs);
                     default:
+                        throw std::runtime_error(
+                            "Unsupported data types for convert: " + std::string(data_type_to_string(lhs.dtype())) + " " + std::string(data_type_to_string(rhs.dtype()))
+                        );
                         __builtin_unreachable();
                 }
                 break;
@@ -568,6 +590,9 @@ namespace questdb::a64 {
                     case data_type_t::f64:
                         return std::make_pair(lhs, rhs);
                     default:
+                        throw std::runtime_error(
+                            "Unsupported data types for convert: " + std::string(data_type_to_string(lhs.dtype())) + " " + std::string(data_type_to_string(rhs.dtype()))
+                        );
                         __builtin_unreachable();
                 }
                 break;
@@ -577,6 +602,9 @@ namespace questdb::a64 {
             case data_type_t::varchar_header:
                 return std::make_pair(lhs, rhs);
             default:
+                throw std::runtime_error(
+                    "Unsupported data types for convert: " + std::string(data_type_to_string(lhs.dtype())) + " " + std::string(data_type_to_string(rhs.dtype()))
+                );
                 __builtin_unreachable();
         }
     }
@@ -664,7 +692,9 @@ namespace questdb::a64 {
             //     values.append(div(c, lhs, rhs, null_check));
             //     break;
             default:
-                assert(false);
+                throw std::runtime_error(
+                    "Unsupported operation: " + std::string(opcode_to_string(instr.opcode))
+                );
                 __builtin_unreachable();
         }
     }
@@ -688,17 +718,22 @@ namespace questdb::a64 {
             comment(c, buf);
             comment(c, "  ");
 
+            auto err = std::runtime_error("Unsupported operation: Var" + std::string(opcode_to_string(instr.opcode)));
+
             switch (instr.opcode) {
                 case opcodes::Inv:
                     return; // todo: throw exception
+
                 case opcodes::Ret:
                     return;
-                // case opcodes::Var: {
-                //     auto type = static_cast<data_type_t>(instr.options);
-                //     auto idx  = static_cast<int32_t>(instr.ipayload.lo);
-                //     values.append(read_vars_mem(c, type, idx, vars_ptr));
-                // }
-                //     break;
+
+                case opcodes::Var:
+                    throw err;
+                    // auto type = static_cast<data_type_t>(instr.options);
+                    // auto idx  = static_cast<int32_t>(instr.ipayload.lo);
+                    // values.append(read_vars_mem(c, type, idx, vars_ptr));
+                    // break;
+
                 case opcodes::Mem:
                     values.append(read_mem(c, type, column_idx, data_ptr, varsize_aux_ptr, input_index));
                     break;
@@ -706,12 +741,17 @@ namespace questdb::a64 {
                 case opcodes::Imm:
                     values.append(read_imm(c, instr));
                     break;
-                // case opcodes::Neg:
+
+                case opcodes::Neg:
+                    throw err;
                     // values.append(neg(c, get_argument(c, values), null_check));
                     // break;
-                // case opcodes::Not:
+
+                case opcodes::Not:
+                    throw err;
                     // values.append(bin_not(c, get_argument(c, values)));
                     // break;
+
                 default:
                     emit_bin_op(c, instr, values, null_check);
                     break;

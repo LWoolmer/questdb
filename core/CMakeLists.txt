@@ -219,7 +219,7 @@ endif ()
 
 add_library(questdb SHARED ${SOURCE_FILES} ${ASMJIT_SRC})
 
-set(COMMON_OPTIONS "-Wno-gnu-anonymous-struct;-Wno-nested-anon-types;-Wno-unused-parameter;-fPIC;-fno-rtti;-fno-exceptions")
+set(COMMON_OPTIONS "-Wno-gnu-anonymous-struct;-Wno-nested-anon-types;-Wno-unused-parameter;-fPIC;-fno-rtti")
 
 set(DEBUG_OPTIONS "-Wall;-pedantic;-Wextra;-g;-O0")
 set(RELEASE_OPTIONS "-O3")

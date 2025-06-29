@@ -26,7 +26,7 @@
 #define QUESTDB_JIT_IMPL_A64_H
 
 #include "consts.h"
-#include <cassert>
+#include <stdexcept>
 
 namespace questdb::a64 {
     using namespace asmjit;
@@ -34,6 +34,7 @@ namespace questdb::a64 {
     using namespace asmjit::arm;
 
     inline void cmp_null(Compiler &c, const Gp &gp) {
+        comment(c, "cmp_null(vec)");
         if (gp.isGp64()) {
             Gp null = c.newInt64();
             c.mov(null, LONG_NULL);
@@ -46,22 +47,46 @@ namespace questdb::a64 {
     }
 
     inline void cmp_null(Compiler &c, const Vec &fp) {
+        comment(c, "cmp_null(vec)");
         if (fp.isVec32()) {
             Gp gp = c.newInt32();
-            Vec null = c.newVecS();
-            c.fmov(fp, gp);
-            c.and_(gp, gp, FLOAT_NAN);
-            c.cmp(gp, gp, FLOAT_NAN);
+            Gp nan = c.newInt32();
+            c.mov(nan, FLOAT_NAN);
+            c.fmov(gp, fp);
+            c.and_(gp, gp, nan);
+            c.cmp(gp, nan);
         } else if (fp.isVec64()) {
             Gp gp = c.newInt64();
-            Vec null = c.newVecD();
-            c.fmov(fp, gp);
-            c.and_(gp, gp, DOUBLE_NAN);
-            c.cmp(gp, gp, DOUBLE_NAN);
+            Gp nan = c.newInt64();
+            c.mov(nan, DOUBLE_NAN);
+            c.fmov(gp, fp);
+            c.and_(gp, gp, nan);
+            c.cmp(gp, nan);
         } else {
-            fprintf(stderr, "Unsupported vector type for null comparison\n");
+            throw std::runtime_error(
+                "Unsupported type for cmp_null(vec)"
+            );
             __builtin_unreachable();
         }
+    }
+
+    inline void cmp_eq_epsilon(Compiler &c, const Vec &lhs, const Vec &rhs) {
+        comment(c, "cmp(eq, +-eps)");
+
+        Mem eps;
+        if (lhs.isVec32()) {
+            eps = c.newFloatConst(ConstPoolScope::kLocal, FLOAT_EPSILON);
+        } else {
+            eps = c.newDoubleConst(ConstPoolScope::kLocal, DOUBLE_EPSILON);
+        }
+
+        Vec eps_vec = c.newSimilarReg(lhs);
+        c.ldr(eps_vec, eps);
+
+        Vec diff = c.newSimilarReg(lhs);
+        c.fsub(diff, lhs, rhs);
+        c.fabs(diff, diff);
+        c.fcmp(diff, eps_vec);
     }
 
     inline Gp to_int64(Compiler &c, const Gp &gp, bool check_null) {
@@ -341,6 +366,7 @@ namespace questdb::a64 {
     // }
 
     inline Gp cmp(Compiler &c, const Gp &lhs, const Gp &rhs, CondCode cond, bool check_null) {
+        comment(c, "cmp(gp)");
         Gp cmp = c.newInt32();
 
         c.cmp(lhs, rhs);
@@ -360,10 +386,16 @@ namespace questdb::a64 {
 
     // REVISIT not optimized
     inline Gp cmp(Compiler &c, const Vec &lhs, const Vec &rhs, CondCode cond) {
-        Label exit = c.newNamedLabel("exit");
+        comment(c, "cmp(vec)");
+        if (lhs.isVec128()) {
+            throw std::runtime_error(
+                "Unsupported data type for cmp: i128"
+            );
+        }
+
+        Label exit = c.newLabel();
 
         Gp cmp = c.newInt32();
-        c.mov(cmp, 1);
 
         Gp lhs_null = c.newInt32();
         Gp rhs_null = c.newInt32();
@@ -381,28 +413,25 @@ namespace questdb::a64 {
             c.mvn(cmp, cmp);
         }
         // If either are null, then return immediately
-        c.cbnz(lhs_null, "exit");
-        c.cbnz(rhs_null, "exit");
+        c.cbnz(lhs_null, exit);
+        c.cbnz(rhs_null, exit);
 
-        Vec diff = c.newSimilarReg(lhs);
-        c.fsub(diff, lhs, rhs);
-        c.fabs(diff, diff);
+        cmp_eq_epsilon(c, lhs, rhs);
 
-        if (lhs.isVec32()) {
-            c.fcmp(diff, FLOAT_EPSILON);
-        } else {
-            c.fcmp(diff, DOUBLE_EPSILON);
-        }
-
-        // Set cmp = 1 if diff < epsilon
+        // Set cmp = 1 if diff <= epsilon
         c.cset(cmp, CondCode::kLE);
+
         if (cond == CondCode::kNE || cond == CondCode::kLT || cond == CondCode::kGT) {
             // Reverse the return value if the condition is NE
             c.mvn(cmp, cmp);
         }
 
         if (cond == CondCode::kLT || cond == CondCode::kLE || cond == CondCode::kGT || cond == CondCode::kGE) {
+            // If LHS == RHS, return cmp
             c.b_le(exit);
+
+            // Otherwise, do the float comparison
+            comment(c, "float comparison");
             c.fcmp(lhs, rhs);
             c.cset(cmp, cond);
         }

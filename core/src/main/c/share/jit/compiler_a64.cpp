@@ -28,6 +28,7 @@
 #include <asmjit/asmjit.h>
 #include <asmjit/a64.h>
 #include <iostream>
+#include <stdexcept>
 
 using namespace asmjit;
 using namespace asmjit::a64;
@@ -81,7 +82,7 @@ struct Function {
     void scalar_loop(const instruction_t *istream, size_t size, bool null_check) {
         Label l_loop = c.newNamedLabel("loop");
         Label l_exit = c.newNamedLabel("exit");
-        
+
         comment(c, "-------------------------------------------------------");
         comment(c, "| Catch if input_index >= rows_size                   |");
         comment(c, "-------------------------------------------------------");
@@ -98,13 +99,13 @@ struct Function {
 
         Gp select_row = values.pop().gp().r64();
         Gp row_id = c.newGp(TypeId::kInt64, "row_id");
-        
+
         comment(c, "-------------------------------------------------------");
         comment(c, "| Store the row_id at rows_ptr[output_index]          |");
         comment(c, "-------------------------------------------------------");
         c.add(row_id, rows_id_start_offset, input_index);
         c.str(row_id, ptr(rows_ptr, output_index, arm::Shift(arm::ShiftOp::kLSL, 3)));
-        
+
         comment(c, "-------------------------------------------------------");
         comment(c, "| If the row was selected, increment output_index     |");
         comment(c, "-------------------------------------------------------");
@@ -249,12 +250,19 @@ Java_io_questdb_jit_FiltersCompiler_compileFunction(JNIEnv *e,
         const instruction_t * instr = reinterpret_cast<const instruction_t *>(filterAddress);
         std::cout << "[" << opcode_to_string(instr[i].opcode) << "][" << instr[i].options << "] "
                   << "lo: " << instr[i].ipayload.lo << ", hi: " << instr[i].ipayload.hi
-                  << ", dpayload: " << instr[i].dpayload << std::endl; 
+                  << ", dpayload: " << instr[i].dpayload << std::endl;
     }
 
-    function.begin_fn();
-    function.compile(reinterpret_cast<const instruction_t *>(filterAddress), size, options);
-    function.end_fn();
+    try {
+        function.begin_fn();
+        function.compile(reinterpret_cast<const instruction_t *>(filterAddress), size, options);
+        function.end_fn();
+    } catch (const std::exception &ex) {
+        fillJitErrorObject(e, error, ErrorCode::kErrorInvalidState, (std::string("stdexception: ") + std::string(ex.what())).c_str());
+        return 0;
+    }
+
+    fprintf(stderr, "JIT function compiled successfully.\n");
 
     Error err = errorHandler.error;
 
