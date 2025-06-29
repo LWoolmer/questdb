@@ -139,10 +139,10 @@ struct instruction_t {
             if (type == data_type_t::f32 || type == data_type_t::f64) {
                 sprintf(buf, "[%s] (%s) %f", opcode_to_string(opcode), data_type_to_string(type), dpayload);
             } else {
-                sprintf(buf, "[%s] (%s) %ld %ld", opcode_to_string(opcode), data_type_to_string(type), ipayload.hi, ipayload.lo);
+                sprintf(buf, "[%s] (%s) %ld << 64 + %ld", opcode_to_string(opcode), data_type_to_string(type), ipayload.hi, ipayload.lo);
             }
         } else if ((opcode == opcodes::Mem) || (opcode == opcodes::Var)) {
-            sprintf(buf, "[%s] (%s) %ld", opcode_to_string(opcode), data_type_to_string(type), ipayload.lo);
+            sprintf(buf, "[%s] (%s) i = %ld", opcode_to_string(opcode), data_type_to_string(type), ipayload.lo);
         } else {
             sprintf(buf, "[%s]", opcode_to_string(opcode));
         }
@@ -161,8 +161,18 @@ struct jit_value_t {
 
     inline jit_value_t &operator=(const jit_value_t &other) noexcept = default;
 
-    void to_string(char* buf) const {
-        sprintf(buf, "%d (%s)", op_.id(), data_type_to_string(type_));
+    void to_string(asmjit::BaseEmitter& c, char* buf) const {
+        if (isImm()) {
+            if (type_ == data_type_t::f32 || type_ == data_type_t::f64) {
+                sprintf(buf, "%f (%s)", imm().valueAs<double>(), data_type_to_string(type_));
+            } else {
+                sprintf(buf, "%ld (%s)", imm().valueAs<int64_t>(), data_type_to_string(type_));
+            }
+        } else {
+            asmjit::StringTmp<256> sb;
+            asmjit::Formatter::formatOperand(sb, {}, &c, asmjit::Arch::kAArch64, op_);
+            sprintf(buf, "%s (%s)", sb.data(), data_type_to_string(type_));
+        }
     }
 
 #ifndef __aarch64__

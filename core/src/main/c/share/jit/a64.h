@@ -610,86 +610,70 @@ namespace questdb::a64 {
     }
 
     inline jit_value_t get_argument(Compiler &c, ZoneStack<jit_value_t> &values) {
-        char buf_arg[512];
-        char buf_loaded[512];
-        jit_value_t arg = values.pop();
-        arg.to_string(buf_arg);
-        jit_value_t loaded = load_register(c, arg);
-        loaded.to_string(buf_loaded);
-        comment(c, "%s  -->  %s", buf_arg, buf_loaded);
-        return loaded;
+        auto arg = values.pop();
+        return load_register(c, arg);
     }
 
     inline std::pair<jit_value_t, jit_value_t>
     get_arguments(Compiler &c, ZoneStack<jit_value_t> &values, bool null_check) {
-        char buf_lhs[512];
-        char buf_lhs_loaded[512];
-        char buf_lhs_converted[512];
-        char buf_rhs[512];
-        char buf_rhs_loaded[512];
-        char buf_rhs_converted[512];
-
         auto lhs = values.pop();
         auto rhs = values.pop();
-        lhs.to_string(buf_lhs);
-        rhs.to_string(buf_rhs);
-
         auto args = load_registers(c, lhs, rhs);
-        args.first.to_string(buf_lhs_loaded);
-        args.second.to_string(buf_rhs_loaded);
-
-        auto converted_args = convert(c, args.first, args.second, null_check);
-
-        converted_args.first.to_string(buf_lhs_converted);
-        converted_args.second.to_string(buf_rhs_converted);
-
-        comment(c, "%s  -->  %s  -->  %s", buf_lhs, buf_lhs_loaded, buf_lhs_converted);
-        comment(c, "%s  -->  %s  -->  %s", buf_rhs, buf_rhs_loaded, buf_rhs_converted);
-        comment(c, " ");
-
-        return converted_args;
+        return convert(c, args.first, args.second, null_check);
     }
 
     void emit_bin_op(Compiler &c, const instruction_t &instr, ZoneStack<jit_value_t> &values, bool null_check) {
         auto args = get_arguments(c, values, null_check);
         jit_value_t lhs = args.first;
         jit_value_t rhs = args.second;
+
+        char buf_instr[512];
+        char buf_lhs[512];
+        char buf_rhs[512];
+        char buf_ret[512];
+        lhs.to_string(c, buf_lhs);
+        rhs.to_string(c, buf_rhs);
+        instr.to_string(buf_instr);
+        comment(c, "                                    >>> ; %s %s %s", buf_lhs, buf_instr, buf_rhs);
+
+        jit_value_t ret;
+
         switch (instr.opcode) {
             case opcodes::And:
-                values.append(bin_and(c, lhs, rhs));
+                ret = bin_and(c, lhs, rhs);
                 break;
             case opcodes::Or:
-                values.append(bin_or(c, lhs, rhs));
+                ret = bin_or(c, lhs, rhs);
                 break;
             case opcodes::Eq:
-                values.append(cmp(c, lhs, rhs, CondCode::kEQ, null_check));
+                ret = cmp(c, lhs, rhs, CondCode::kEQ, null_check);
                 break;
             case opcodes::Ne:
-                values.append(cmp(c, lhs, rhs, CondCode::kNE, null_check));
+                ret = cmp(c, lhs, rhs, CondCode::kNE, null_check);
                 break;
             case opcodes::Gt:
-                values.append(cmp(c, lhs, rhs, CondCode::kGT, null_check));
+                ret = cmp(c, lhs, rhs, CondCode::kGT, null_check);
                 break;
             case opcodes::Ge:
-                values.append(cmp(c, lhs, rhs, CondCode::kGE, null_check));
+                ret = cmp(c, lhs, rhs, CondCode::kGE, null_check);
                 break;
             case opcodes::Lt:
-                values.append(cmp(c, lhs, rhs, CondCode::kLT, null_check));
+                ret = cmp(c, lhs, rhs, CondCode::kLT, null_check);
                 break;
             case opcodes::Le:
-                values.append(cmp(c, lhs, rhs, CondCode::kLE, null_check));
+                ret = cmp(c, lhs, rhs, CondCode::kLE, null_check);
                 break;
             // case opcodes::Add:
-            //     values.append(add(c, lhs, rhs, null_check));
+            //     ret = add(c, lhs, rhs, null_check);
             //     break;
             // case opcodes::Sub:
-            //     values.append(sub(c, lhs, rhs, null_check));
+            //     ret = sub(c, lhs, rhs, null_check);
             //     break;
             // case opcodes::Mul:
-            //     values.append(mul(c, lhs, rhs, null_check));
+            //     ret = mul(c, lhs, rhs, null_check);
             //     break;
             // case opcodes::Div:
-            //     values.append(div(c, lhs, rhs, null_check));
+            //     ret = div(c, lhs, rhs, null_check);
             //     break;
             default:
                 throw std::runtime_error(
@@ -697,6 +681,10 @@ namespace questdb::a64 {
                 );
                 __builtin_unreachable();
         }
+
+        ret.to_string(c, buf_ret);
+        comment(c, "                                    <<< ; %s", buf_ret);
+        values.append(ret);
     }
 
     void
@@ -712,13 +700,9 @@ namespace questdb::a64 {
             auto type = static_cast<data_type_t>(instr.options);
             auto column_idx  = static_cast<int32_t>(instr.ipayload.lo);
 
-            comment(c, "  ");
             char buf[512];
-            instr.to_string(buf);
-            comment(c, buf);
-            comment(c, "  ");
-
-            auto err = std::runtime_error("Unsupported operation: Var" + std::string(opcode_to_string(instr.opcode)));
+            auto err = std::runtime_error("Unsupported operation: " + std::string(opcode_to_string(instr.opcode)));
+            jit_value_t ret;
 
             switch (instr.opcode) {
                 case opcodes::Inv:
@@ -735,11 +719,21 @@ namespace questdb::a64 {
                     // break;
 
                 case opcodes::Mem:
-                    values.append(read_mem(c, type, column_idx, data_ptr, varsize_aux_ptr, input_index));
+                    instr.to_string(buf);
+                    comment(c, "                                    >>> ; %s", buf);
+                    ret = read_mem(c, type, column_idx, data_ptr, varsize_aux_ptr, input_index);
+                    ret.to_string(c, buf);
+                    comment(c, "                                    <<< ; %s", buf);
+                    values.append(ret);
                     break;
 
                 case opcodes::Imm:
-                    values.append(read_imm(c, instr));
+                    instr.to_string(buf);
+                    comment(c, "                                    >>> ; %s", buf);
+                    ret = read_imm(c, instr);
+                    ret.to_string(c, buf);
+                    comment(c, "                                    <<< ; %s", buf);
+                    values.append(ret);
                     break;
 
                 case opcodes::Neg:

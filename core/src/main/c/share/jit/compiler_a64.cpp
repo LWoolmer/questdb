@@ -262,8 +262,6 @@ Java_io_questdb_jit_FiltersCompiler_compileFunction(JNIEnv *e,
         return 0;
     }
 
-    fprintf(stderr, "JIT function compiled successfully.\n");
-
     Error err = errorHandler.error;
 
     if(err == ErrorCode::kErrorOk) {
