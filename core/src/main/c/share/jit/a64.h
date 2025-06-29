@@ -237,6 +237,7 @@ namespace questdb::a64 {
                 case data_type_t::f32:
                     vec = c.newVecS();
                     mem = c.newFloatConst(ConstPoolScope::kLocal, static_cast<float>(value));
+                    c.ldr(vec, mem);
                     return {vec, dst_type, data_kind_t::kConst};
 
                 case data_type_t::f64:
