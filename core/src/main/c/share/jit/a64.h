@@ -399,43 +399,39 @@ namespace questdb::a64 {
         return {lhs_gp, dt, dk};
     }
 
-    // jit_value_t add(Compiler &c, const jit_value_t &lhs, const jit_value_t &rhs, bool null_check) {
-    //     auto dt = lhs.dtype();
-    //     auto dk = dst_kind(lhs, rhs);
-    //     switch (dt) {
-    //         case data_type_t::i8:
-    //         case data_type_t::i16:
-    //         case data_type_t::i32:
-    //             return {int32_add(c, lhs.gp().r32(), rhs.gp().r32(), null_check), dt, dk};
-    //         case data_type_t::i64:
-    //             return {int64_add(c, lhs.gp(), rhs.gp(), null_check), dt, dk};
-    //         case data_type_t::f32:
-    //             return {float_add(c, lhs.xmm(), rhs.xmm()), dt, dk};
-    //         case data_type_t::f64:
-    //             return {double_add(c, lhs.xmm(), rhs.xmm()), dt, dk};
-    //         default:
-    //             __builtin_unreachable();
-    //     }
-    // }
+    jit_value_t add(Compiler &c, const jit_value_t &lhs, const jit_value_t &rhs, bool null_check) {
+        auto dt = lhs.dtype();
+        auto dk = dst_kind(lhs, rhs);
+        switch (dt) {
+            case data_type_t::i8:
+            case data_type_t::i16:
+            case data_type_t::i32:
+            case data_type_t::i64:
+                return {add(c, lhs.gp(), rhs.gp(), null_check), dt, dk};
+            case data_type_t::f32:
+            case data_type_t::f64:
+                return {add(c, lhs.vec(), rhs.vec(), null_check), dt, dk};
+            default:
+                __builtin_unreachable();
+        }
+    }
 
-    // jit_value_t sub(Compiler &c, const jit_value_t &lhs, const jit_value_t &rhs, bool null_check) {
-    //     auto dt = lhs.dtype();
-    //     auto dk = dst_kind(lhs, rhs);
-    //     switch (dt) {
-    //         case data_type_t::i8:
-    //         case data_type_t::i16:
-    //         case data_type_t::i32:
-    //             return {int32_sub(c, lhs.gp().r32(), rhs.gp().r32(), null_check), dt, dk};
-    //         case data_type_t::i64:
-    //             return {int64_sub(c, lhs.gp(), rhs.gp(), null_check), dt, dk};
-    //         case data_type_t::f32:
-    //             return {float_sub(c, lhs.xmm(), rhs.xmm()), dt, dk};
-    //         case data_type_t::f64:
-    //             return {double_sub(c, lhs.xmm(), rhs.xmm()), dt, dk};
-    //         default:
-    //             __builtin_unreachable();
-    //     }
-    // }
+    jit_value_t sub(Compiler &c, const jit_value_t &lhs, const jit_value_t &rhs, bool null_check) {
+        auto dt = lhs.dtype();
+        auto dk = dst_kind(lhs, rhs);
+        switch (dt) {
+            case data_type_t::i8:
+            case data_type_t::i16:
+            case data_type_t::i32:
+            case data_type_t::i64:
+                return {sub(c, lhs.gp(), rhs.gp(), null_check), dt, dk};
+            case data_type_t::f32:
+            case data_type_t::f64:
+                return {sub(c, lhs.vec(), rhs.vec(), null_check), dt, dk};
+            default:
+                __builtin_unreachable();
+        }
+    }
 
     // jit_value_t mul(Compiler &c, const jit_value_t &lhs, const jit_value_t &rhs, bool null_check) {
     //     auto dt = lhs.dtype();
@@ -664,12 +660,12 @@ namespace questdb::a64 {
             case opcodes::Le:
                 ret = cmp(c, lhs, rhs, CondCode::kLE, null_check);
                 break;
-            // case opcodes::Add:
-            //     ret = add(c, lhs, rhs, null_check);
-            //     break;
-            // case opcodes::Sub:
-            //     ret = sub(c, lhs, rhs, null_check);
-            //     break;
+            case opcodes::Add:
+                ret = add(c, lhs, rhs, null_check);
+                break;
+            case opcodes::Sub:
+                ret = sub(c, lhs, rhs, null_check);
+                break;
             // case opcodes::Mul:
             //     ret = mul(c, lhs, rhs, null_check);
             //     break;

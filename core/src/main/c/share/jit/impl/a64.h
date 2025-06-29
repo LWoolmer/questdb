@@ -174,24 +174,66 @@ namespace questdb::a64 {
     //     return r.as<Gpq>();
     // }
 
-    // inline Gpd int32_add(Compiler &c, const Gpd &lhs, const Gpd &rhs, bool check_null) {
-    //     c.comment("int32_add");
+    inline Gp add(Compiler &c, const Gp &lhs, const Gp &rhs, bool check_null) {
+        comment(c, "add(gp)");
 
-    //     Gp r = c.newInt64();
-    //     c.lea(r, ptr(lhs, rhs));
-    //     if (check_null) check_int32_null(c, r, lhs, rhs);
-    //     return r.as<Gpd>();
-    // }
+        Gp result = c.newSimilarReg(lhs);
+        c.add(result, lhs, rhs);
 
-    // inline Gpd int32_sub(Compiler &c, const Gpd &lhs, const Gpd &rhs, bool check_null) {
-    //     c.comment("int32_sub");
+        if (check_null) {
+            cmp_null(c, lhs);
+            c.csel(result, result, lhs, CondCode::kNE);
+            cmp_null(c, rhs);
+            c.csel(result, result, rhs, CondCode::kNE);
+        }
+        return result;
+    }
 
-    //     Gp r = c.newInt32();
-    //     c.mov(r, lhs);
-    //     c.sub(r, rhs);
-    //     if (check_null) check_int32_null(c, r, lhs, rhs);
-    //     return r.as<Gpd>();
-    // }
+    inline Vec add(Compiler &c, const Vec &lhs, const Vec &rhs, bool check_null) {
+        comment(c, "add(vec)");
+
+        Vec result = c.newSimilarReg(lhs);
+        c.fadd(result, lhs, rhs);
+
+        if (check_null) {
+            cmp_null(c, lhs);
+            c.fcsel(result, result, lhs, CondCode::kNE);
+            cmp_null(c, rhs);
+            c.fcsel(result, result, rhs, CondCode::kNE);
+        }
+        return result;
+    }
+
+    inline Gp sub(Compiler &c, const Gp &lhs, const Gp &rhs, bool check_null) {
+        comment(c, "sub(gp)");
+
+        Gp result = c.newSimilarReg(lhs);
+        c.sub(result, lhs, rhs);
+
+        if (check_null) {
+            cmp_null(c, lhs);
+            c.csel(result, result, lhs, CondCode::kNE);
+            cmp_null(c, rhs);
+            c.csel(result, result, rhs, CondCode::kNE);
+        }
+        return result;
+    }
+
+    inline Vec sub(Compiler &c, const Vec &lhs, const Vec &rhs, bool check_null) {
+        comment(c, "sub(vec)");
+
+        Vec result = c.newSimilarReg(lhs);
+        c.fsub(result, lhs, rhs);
+
+        if (check_null) {
+            cmp_null(c, lhs);
+            c.fcsel(result, result, lhs, CondCode::kNE);
+            cmp_null(c, rhs);
+            c.fcsel(result, result, rhs, CondCode::kNE);
+        }
+        return result;
+    }
+
 
     // inline Gpd int32_mul(Compiler &c, const Gpd &lhs, const Gpd &rhs, bool check_null) {
     //     c.comment("int32_mul");
@@ -234,34 +276,6 @@ namespace questdb::a64 {
     //     c.idiv(t, r, rhs);
     //     c.bind(l_null);
     //     return r.as<Gpd>();
-    // }
-
-    // inline void check_int64_null(Compiler &c, const Gp &dst, const Gp &lhs, const Gp &rhs) {
-    //     c.comment("check_int64_null");
-    //     Gp n = c.newGpq();
-    //     c.movabs(n, LONG_NULL);
-    //     c.cmp(lhs, n);
-    //     c.cmove(dst, lhs);
-    //     c.cmp(rhs, n);
-    //     c.cmove(dst, rhs);
-    // }
-
-    // inline Gpq int64_add(Compiler &c, const Gpq &lhs, const Gpq &rhs, bool check_null) {
-    //     c.comment("int64_add");
-
-    //     Gp r = c.newInt64();
-    //     c.lea(r, ptr(lhs, rhs));
-    //     if (check_null) check_int64_null(c, r, lhs, rhs);
-    //     return r.as<Gpq>();
-    // }
-
-    // inline Gpq int64_sub(Compiler &c, const Gpq &lhs, const Gpq &rhs, bool check_null) {
-    //     c.comment("int64_sub");
-    //     Gp r = c.newInt64();
-    //     c.mov(r, lhs);
-    //     c.sub(r, rhs);
-    //     if (check_null) check_int64_null(c, r, lhs, rhs);
-    //     return r.as<Gpq>();
     // }
 
     // inline Gpq int64_mul(Compiler &c, const Gpq &lhs, const Gpq &rhs, bool check_null) {
@@ -325,16 +339,6 @@ namespace questdb::a64 {
     //     return rhs;
     // }
 
-    // inline Xmm float_add(Compiler &c, const Xmm &lhs, const Xmm &rhs) {
-    //     c.addss(lhs, rhs);
-    //     return lhs;
-    // }
-
-    // inline Xmm float_sub(Compiler &c, const Xmm &lhs, const Xmm &rhs) {
-    //     c.subss(lhs, rhs);
-    //     return lhs;
-    // }
-
     // inline Xmm float_mul(Compiler &c, const Xmm &lhs, const Xmm &rhs) {
     //     c.mulss(lhs, rhs);
     //     return lhs;
@@ -342,16 +346,6 @@ namespace questdb::a64 {
 
     // inline Xmm float_div(Compiler &c, const Xmm &lhs, const Xmm &rhs) {
     //     c.divss(lhs, rhs);
-    //     return lhs;
-    // }
-
-    // inline Xmm double_add(Compiler &c, const Xmm &lhs, const Xmm &rhs) {
-    //     c.addsd(lhs, rhs);
-    //     return lhs;
-    // }
-
-    // inline Xmm double_sub(Compiler &c, const Xmm &lhs, const Xmm &rhs) {
-    //     c.subsd(lhs, rhs);
     //     return lhs;
     // }
 
