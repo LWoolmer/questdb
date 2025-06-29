@@ -41,7 +41,7 @@ public class OsTest {
 
     @Test
     public void testAffinity() throws Exception {
-        if (Os.arch != Os.ARCH_AARCH64 || Os.type != Os.DARWIN) {
+        if (Os.arch != Os.ARCH_AARCH64 && Os.type != Os.DARWIN) {
             Assert.assertEquals(0, Os.setCurrentThreadAffinity(0));
 
             AtomicInteger result = new AtomicInteger(-1);
