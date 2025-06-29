@@ -393,51 +393,49 @@ namespace questdb::a64 {
             );
         }
 
-        Label exit = c.newLabel();
+        Gp result = c.newInt32();
+        Gp eq_epsilon = c.newInt32();
 
-        Gp cmp = c.newInt32();
+        cmp_eq_epsilon(c, lhs, rhs);
+        c.cset(eq_epsilon, CondCode::kLE);
+
+        // This is a bit tricky:
+        //  - if EQ then use the epsilon comparison
+        //  - if NE then use the negation of the epsilon comparison
+        //  - if LE/GE, then use the float comparison OR epsilon comparison
+        //  - if LT/GT, then do the float comparison AND NOT epsilon comparison
+        if (cond == CondCode::kEQ) {
+            result = eq_epsilon;
+        } else if (cond == CondCode::kNE) {
+            c.mvn(result, eq_epsilon);
+        } else {
+            c.fcmp(lhs, rhs);
+            c.cset(result, cond);
+            if ((cond == CondCode::kLE) || (cond == CondCode::kGE)) {
+                c.orr(result, result, eq_epsilon);
+            } else {
+                c.mvn(eq_epsilon, eq_epsilon);
+                c.and_(result, result, eq_epsilon);
+            }
+        }
 
         Gp lhs_null = c.newInt32();
         Gp rhs_null = c.newInt32();
 
         cmp_null(c, lhs);
         c.cset(lhs_null, CondCode::kEQ);
-
         cmp_null(c, rhs);
         c.cset(rhs_null, CondCode::kEQ);
 
-        // Set cmp = 1 if both are null
-        c.and_(cmp, lhs_null, rhs_null);
-        if (cond == CondCode::kNE || cond == CondCode::kLT || cond == CondCode::kGT) {
-            // Reverse the return value if the condition is NE
-            c.mvn(cmp, cmp);
+        c.eor(lhs_null, lhs_null, rhs_null);
+
+        if (cond == CondCode::kNE) {
+            c.orr(result, result, lhs_null);
+        } else {
+            c.mvn(lhs_null, lhs_null);
+            c.and_(result, result, lhs_null);
         }
-        // If either are null, then return immediately
-        c.cbnz(lhs_null, exit);
-        c.cbnz(rhs_null, exit);
-
-        cmp_eq_epsilon(c, lhs, rhs);
-
-        // Set cmp = 1 if diff <= epsilon
-        c.cset(cmp, CondCode::kLE);
-
-        if (cond == CondCode::kNE || cond == CondCode::kLT || cond == CondCode::kGT) {
-            // Reverse the return value if the condition is NE
-            c.mvn(cmp, cmp);
-        }
-
-        if (cond == CondCode::kLT || cond == CondCode::kLE || cond == CondCode::kGT || cond == CondCode::kGE) {
-            // If LHS == RHS, return cmp
-            c.b_le(exit);
-
-            // Otherwise, do the float comparison
-            comment(c, "float comparison");
-            c.fcmp(lhs, rhs);
-            c.cset(cmp, cond);
-        }
-
-        c.bind(exit);
-        return cmp;
+        return result;
     }
 
 }
