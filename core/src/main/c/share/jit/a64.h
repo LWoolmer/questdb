@@ -341,11 +341,11 @@ namespace questdb::a64 {
             case data_type_t::i64:
             case data_type_t::binary_header:
             case data_type_t::varchar_header:
-                return {cmp(c, lhs.gp(), rhs.gp(), cond, null_check), lhs.dtype(), dst_kind(lhs, rhs)};
+                return {cmp(c, lhs.gp(), rhs.gp(), cond, null_check), data_type_t::i32, dst_kind(lhs, rhs)};
             case data_type_t::i128:
             case data_type_t::f32:
             case data_type_t::f64:
-                return {cmp(c, lhs.vec(), rhs.vec(), cond), lhs.dtype(), dst_kind(lhs, rhs)};
+                return {cmp(c, lhs.vec(), rhs.vec(), cond), data_type_t::i32, dst_kind(lhs, rhs)};
             default:
                 throw std::runtime_error(
                     "Unsupported data type for lhs of cmp: " + std::string(data_type_to_string(dt))
