@@ -238,60 +238,41 @@ namespace questdb::a64 {
                     vec = c.newVecS();
                     mem = c.newFloatConst(ConstPoolScope::kLocal, static_cast<float>(value));
                     c.ldr(vec, mem);
-                    return {vec, dst_type, data_kind_t::kConst};
+                    return {vec, data_type_t::f32, data_kind_t::kConst};
 
                 case data_type_t::f64:
                     vec = c.newVecD();
                     mem = c.newDoubleConst(ConstPoolScope::kLocal, static_cast<double>(value));
                     c.ldr(vec, mem);
-                    return {vec, dst_type, data_kind_t::kConst};
+                    return {vec, data_type_t::f64, data_kind_t::kConst};
 
                 case data_type_t::i128:
-                    vec = c.newVecQ();
-                    c.movi(vec, value);
-                    c.movi(vec.at(1), 0);
-                    return {vec, dst_type, data_kind_t::kConst};
-
                 case data_type_t::i64:
                     gp = c.newInt64();
-                    c.mov(gp, value);
-                    return {gp, dst_type, data_kind_t::kConst};
+                    c.mov(gp, static_cast<int64_t>(value));
+                    return {gp, data_type_t::i64, data_kind_t::kConst};
 
                 default:
                     gp = c.newInt32();
                     c.mov(gp, static_cast<int32_t>(value));
-                    return {gp, dst_type, data_kind_t::kConst};
+                    return {gp, data_type_t::i32, data_kind_t::kConst};
             }
         } else {
             auto value = imm.valueAs<double>();
             switch (dst_type) {
-                case data_type_t::f32:
-                    vec = c.newVecS();
-                    mem = c.newFloatConst(ConstPoolScope::kLocal, static_cast<float>(value));
-                    c.ldr(vec, mem);
-                    return {vec, dst_type, data_kind_t::kConst};
-
+                case data_type_t::i128:
+                case data_type_t::i64:
                 case data_type_t::f64:
                     vec = c.newVecD();
                     mem = c.newDoubleConst(ConstPoolScope::kLocal, static_cast<double>(value));
                     c.ldr(vec, mem);
-                    return {vec, dst_type, data_kind_t::kConst};
-
-                case data_type_t::i128:
-                    vec = c.newVecQ();
-                    c.movi(vec, static_cast<int64_t>(value));
-                    c.movi(vec.at(1), 0);
-                    return {vec, dst_type, data_kind_t::kConst};
-
-                case data_type_t::i64:
-                    gp = c.newInt64();
-                    c.mov(gp, value);
-                    return {gp, dst_type, data_kind_t::kConst};
+                    return {vec, data_type_t::f64, data_kind_t::kConst};
 
                 default:
-                    gp = c.newInt32();
-                    c.mov(gp, static_cast<int32_t>(value));
-                    return {gp, dst_type, data_kind_t::kConst};
+                    vec = c.newVecS();
+                    mem = c.newFloatConst(ConstPoolScope::kLocal, static_cast<float>(value));
+                    c.ldr(vec, mem);
+                    return {vec, data_type_t::f32, data_kind_t::kConst};
             }
         }
 
