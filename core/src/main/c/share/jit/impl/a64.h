@@ -178,6 +178,32 @@ namespace questdb::a64 {
     //     return r.as<Gpq>();
     // }
 
+    inline Gp neg(Compiler &c, const Gp &rhs, bool check_null) {
+        comment(c, "add(gp)");
+
+        Gp result = c.newSimilarReg(rhs);
+        c.neg(result, rhs);
+
+        if (check_null) {
+            cmp_null(c, rhs);
+            c.csel(result, result, rhs, CondCode::kNE);
+        }
+        return result;
+    }
+
+    inline Vec neg(Compiler &c, const Vec &rhs, bool check_null) {
+        comment(c, "add(gp)");
+
+        Vec result = c.newSimilarReg(rhs);
+        c.fneg(result, rhs);
+
+        if (check_null) {
+            cmp_null(c, rhs);
+            c.fcsel(result, result, rhs, CondCode::kNE);
+        }
+        return result;
+    }
+
     inline Gp add(Compiler &c, const Gp &lhs, const Gp &rhs, bool check_null) {
         comment(c, "add(gp)");
 

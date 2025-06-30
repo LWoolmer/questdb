@@ -354,24 +354,22 @@ namespace questdb::a64 {
         }
     }
 
-    // jit_value_t neg(Compiler &c, const jit_value_t &lhs, bool null_check) {
-    //     auto dt = lhs.dtype();
-    //     auto dk = lhs.dkind();
-    //     switch (dt) {
-    //         case data_type_t::i8:
-    //         case data_type_t::i16:
-    //         case data_type_t::i32:
-    //             return {int32_neg(c, lhs.gp().r32(), null_check), dt, dk};
-    //         case data_type_t::i64:
-    //             return {int64_neg(c, lhs.gp(), null_check), dt, dk};
-    //         case data_type_t::f32:
-    //             return {float_neg(c, lhs.xmm()), dt, dk};
-    //         case data_type_t::f64:
-    //             return {double_neg(c, lhs.xmm()), dt, dk};
-    //         default:
-    //             __builtin_unreachable();
-    //     }
-    // }
+    jit_value_t neg(Compiler &c, const jit_value_t &lhs, bool null_check) {
+        auto dt = lhs.dtype();
+        auto dk = lhs.dkind();
+        switch (dt) {
+            case data_type_t::i8:
+            case data_type_t::i16:
+            case data_type_t::i32:
+            case data_type_t::i64:
+                return {neg(c, lhs.gp(), null_check), dt, dk};
+            case data_type_t::f32:
+            case data_type_t::f64:
+                return {neg(c, lhs.vec(), null_check), dt, dk};
+            default:
+                __builtin_unreachable();
+        }
+    }
 
     jit_value_t bin_not(Compiler &c, const jit_value_t &lhs) {
         auto dt = lhs.dtype();
@@ -734,9 +732,8 @@ namespace questdb::a64 {
                     break;
 
                 case opcodes::Neg:
-                    throw err;
-                    // values.append(neg(c, get_argument(c, values), null_check));
-                    // break;
+                    values.append(neg(c, get_argument(c, values), null_check));
+                    break;
 
                 case opcodes::Not:
                     throw err;
