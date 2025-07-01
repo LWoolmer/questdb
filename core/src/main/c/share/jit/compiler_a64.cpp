@@ -97,7 +97,7 @@ struct Function {
 
         questdb::a64::emit_code(c, istream, size, values, null_check, data_ptr, varsize_aux_ptr, vars_ptr, input_index);
 
-        Gp select_row = values.pop().gp().r64();
+        Gp select_row = values.pop().as<Gp>().r64();
         Gp row_id = c.newGp(TypeId::kInt64, "row_id");
 
         comment(c, "-------------------------------------------------------");
@@ -170,7 +170,7 @@ struct Function {
 
     Zone zone;
     ZoneAllocator allocator;
-    ZoneStack<jit_value_t> values;
+    ZoneStack<Reg> values;
 
     a64::Gp data_ptr;
     a64::Gp data_size;
@@ -220,7 +220,7 @@ Java_io_questdb_jit_FiltersCompiler_compileFunction(JNIEnv *e,
         return 0;
     }
 
-     CodeHolder code;
+    CodeHolder code;
     code.init(gGlobalContext.rt.environment());
     FileLogger logger(stdout);
     bool debug = options & 1;
@@ -282,6 +282,7 @@ Java_io_questdb_jit_FiltersCompiler_compileFunction(JNIEnv *e,
     std::cout << "---------------------------------------------------------------------" << std::endl;
 
 
+    fillJitErrorObject(e, error, ErrorCode::kErrorInvalidState, "bang!");
     if(err != ErrorCode::kErrorOk) {
         fillJitErrorObject(e, error, err, errorHandler.message.data());
         return 0;

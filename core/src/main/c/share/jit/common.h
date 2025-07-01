@@ -27,6 +27,7 @@
 
 #include <asmjit/asmjit.h>
 #include <asmjit/a64.h>
+#include <stdexcept>
 
 const int32_t FLOAT_NAN = 0x7fc00000;
 const int64_t DOUBLE_NAN = 0x7ff8000000000000LL;
@@ -238,6 +239,30 @@ inline data_kind_t dst_kind(const jit_value_t &lhs, const jit_value_t &rhs) {
     return dk;
 }
 
+#ifdef __aarch64__
+
+#define REG_TYPE_STRING(type) \
+    case asmjit::RegType::type: return #type;
+
+inline const char *reg_type_to_string(asmjit::RegType type) {
+    switch (type) {
+        REG_TYPE_STRING(kGp32)
+        REG_TYPE_STRING(kGp64)
+        REG_TYPE_STRING(kVec32)
+        REG_TYPE_STRING(kVec64)
+        REG_TYPE_STRING(kVec128)
+        default:
+            return "Unknown";
+    }
+}
+
+inline void reg_to_string(asmjit::BaseEmitter& c, asmjit::arm::Reg reg, char* buf) {
+    asmjit::StringTmp<256> sb;
+    asmjit::Formatter::formatOperand(sb, {}, &c, asmjit::Arch::kAArch64, reg);
+    sprintf(buf, "%s (%s)", sb.data(), reg_type_to_string(reg.type()));
+}
+#endif
+
 inline void comment(asmjit::BaseCompiler &c, const char *fmt, ...) {
     va_list args;
     va_start(args, fmt);
@@ -246,5 +271,12 @@ inline void comment(asmjit::BaseCompiler &c, const char *fmt, ...) {
     c.comment(buffer);
     va_end(args);
 }
+
+#define UNREACHABLE(...) do { \
+    char buf[1024]; \
+    snprintf(buf, sizeof(buf), __VA_ARGS__); \
+    throw std::runtime_error(buf); \
+    __builtin_unreachable(); \
+} while (0)
 
 #endif //QUESTDB_JIT_COMMON_H

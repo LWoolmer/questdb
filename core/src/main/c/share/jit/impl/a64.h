@@ -63,10 +63,7 @@ namespace questdb::a64 {
             c.and_(gp, gp, nan);
             c.cmp(gp, nan);
         } else {
-            throw std::runtime_error(
-                "Unsupported type for cmp_null(vec)"
-            );
-            __builtin_unreachable();
+            UNREACHABLE("Unsupported type for cmp_null(vec)");
         }
     }
 
@@ -101,7 +98,7 @@ namespace questdb::a64 {
         return gp64;
     }
 
-    inline Gp to_int64(Compiler &c, const Vec &fp) {
+    inline Gp to_int64(Compiler &c, const Vec &fp, bool check_null) {
         Gp gp64 = c.newInt64();
         c.fcvtzs(gp64, fp);
         return gp64;
@@ -135,77 +132,63 @@ namespace questdb::a64 {
         return fp;
     }
 
-    inline Vec to_double(Compiler &c, const Vec &fps) {
+    inline Vec to_double(Compiler &c, const Vec &fps, bool check_null) {
         Vec fpd = c.newVecD();
         c.fcvt(fpd, fps);
         return fpd;
     }
 
-    // inline void check_int32_null(Compiler &c, const Gp &dst, const Gpd &lhs, const Gpd &rhs) {
-    //     c.cmp(lhs, INT_NULL);
-    //     c.cmove(dst, lhs);
-    //     c.cmp(rhs, INT_NULL);
-    //     c.cmove(dst, rhs);
-    // }
+    inline Gp bin_not(Compiler &c, const Gp &lhs) {
+        Gp result = c.newSimilarReg(lhs);
+        c.eor(result, lhs, -1);
+        return result;
+    }
 
-    // inline Gpd int32_neg(Compiler &c, const Gpd &rhs, bool check_null) {
-    //     c.comment("int32_neg");
+    inline Gp bin_and(Compiler &c, const Gp &lhs, const Gp &rhs) {
+        Gp result = c.newSimilarReg(lhs);
+        c.and_(result, lhs, rhs);
+        return result;
+    }
 
-    //     Gp r = c.newInt32();
-    //     c.mov(r, rhs);
-    //     c.neg(r);
-    //     if (check_null) {
-    //         Gp t = c.newInt32();
-    //         c.mov(t, INT_NULL);
-    //         c.cmp(rhs, t);
-    //         c.cmove(r, t);
-    //     }
-    //     return r.as<Gpd>();
-    // }
+    inline Gp bin_or(Compiler &c, const Gp &lhs, const Gp &rhs) {
+        Gp result = c.newSimilarReg(lhs);
+        c.orr(result, lhs, rhs);
+        return result;
+    }
 
-    // inline Gpq int64_neg(Compiler &c, const Gpq &rhs, bool check_null) {
-    //     c.comment("int64_neg");
-
-    //     Gp r = c.newInt64();
-    //     c.mov(r, rhs);
-    //     c.neg(r);
-    //     if (check_null) {
-    //         Gp t = c.newInt64();
-    //         c.movabs(t, LONG_NULL);
-    //         c.cmp(rhs, t);
-    //         c.cmove(r, rhs);
-    //     }
-    //     return r.as<Gpq>();
-    // }
-
-    inline Gp neg(Compiler &c, const Gp &rhs, bool check_null) {
+    inline Gp neg(Compiler &c, const Gp &lhs, bool check_null) {
         comment(c, "add(gp)");
-
-        Gp result = c.newSimilarReg(rhs);
-        c.neg(result, rhs);
+        Gp result = c.newSimilarReg(lhs);
+        c.neg(result, lhs);
 
         if (check_null) {
-            cmp_null(c, rhs);
-            c.csel(result, result, rhs, CondCode::kNE);
+            cmp_null(c, lhs);
+            c.csel(result, result, lhs, CondCode::kNE);
         }
         return result;
     }
 
-    inline Vec neg(Compiler &c, const Vec &rhs, bool check_null) {
+    inline Vec neg(Compiler &c, const Vec &lhs, bool check_null) {
         comment(c, "add(gp)");
+        if (lhs.type() != lhs.type()) {
+            UNREACHABLE("neg called with different types");
+        }
 
-        Vec result = c.newSimilarReg(rhs);
-        c.fneg(result, rhs);
+        Vec result = c.newSimilarReg(lhs);
+        c.fneg(result, lhs);
 
         if (check_null) {
-            cmp_null(c, rhs);
-            c.fcsel(result, result, rhs, CondCode::kNE);
+            cmp_null(c, lhs);
+            c.fcsel(result, result, lhs, CondCode::kNE);
         }
         return result;
     }
 
     inline Gp add(Compiler &c, const Gp &lhs, const Gp &rhs, bool check_null) {
         comment(c, "add(gp)");
+        if (lhs.type() != rhs.type()) {
+            UNREACHABLE("add(gp) called with different types");
+        }
 
         Gp result = c.newSimilarReg(lhs);
         c.add(result, lhs, rhs);
@@ -221,6 +204,9 @@ namespace questdb::a64 {
 
     inline Vec add(Compiler &c, const Vec &lhs, const Vec &rhs, bool check_null) {
         comment(c, "add(vec)");
+        if (lhs.type() != rhs.type()) {
+            UNREACHABLE("add(vec) called with different types");
+        }
 
         Vec result = c.newSimilarReg(lhs);
         c.fadd(result, lhs, rhs);
@@ -236,6 +222,9 @@ namespace questdb::a64 {
 
     inline Gp sub(Compiler &c, const Gp &lhs, const Gp &rhs, bool check_null) {
         comment(c, "sub(gp)");
+        if (lhs.type() != rhs.type()) {
+            UNREACHABLE("sub(gp) called with different types");
+        }
 
         Gp result = c.newSimilarReg(lhs);
         c.sub(result, lhs, rhs);
@@ -251,6 +240,9 @@ namespace questdb::a64 {
 
     inline Vec sub(Compiler &c, const Vec &lhs, const Vec &rhs, bool check_null) {
         comment(c, "sub(vec)");
+        if (lhs.type() != rhs.type()) {
+            UNREACHABLE("sub(vec) called with different types");
+        }
 
         Vec result = c.newSimilarReg(lhs);
         c.fsub(result, lhs, rhs);
@@ -390,10 +382,13 @@ namespace questdb::a64 {
     // }
 
     // REVISIT not optimized
- inline Gp cmp(Compiler &c, const Gp &lhs, const Gp &rhs, CondCode cond, bool check_null) {
+    inline Gp cmp(Compiler &c, const Gp &lhs, const Gp &rhs, CondCode cond, bool check_null) {
         comment(c, "cmp(gp)");
+        if (lhs.type() != rhs.type()) {
+            UNREACHABLE("cmp called with different types");
+        }
 
-        Gp result = c.newInt32();
+        Gp result = c.newInt64();
         c.cmp(lhs, rhs);
         c.cset(result, cond);
 
@@ -403,8 +398,8 @@ namespace questdb::a64 {
 
         // check_null && (LT || LE || GT || GE)
 
-        Gp lhs_null = c.newInt32();
-        Gp rhs_null = c.newInt32();
+        Gp lhs_null = c.newInt64();
+        Gp rhs_null = c.newInt64();
 
         cmp_null(c, lhs);
         c.cset(lhs_null, CondCode::kEQ);
@@ -421,14 +416,35 @@ namespace questdb::a64 {
     // REVISIT not optimized
     inline Gp cmp(Compiler &c, const Vec &lhs, const Vec &rhs, CondCode cond) {
         comment(c, "cmp(vec)");
-        if (lhs.isVec128()) {
-            throw std::runtime_error(
-                "Unsupported data type for cmp: i128"
-            );
+        if (lhs.type() != rhs.type()) {
+            UNREACHABLE("cmp called with different types");
         }
+        // REVISIT very very not optimized
+        if (lhs.isVec128()) {
+            Gp lhs_lo = c.newInt64();
+            Gp rhs_lo = c.newInt64();
+            c.mov(lhs_lo, lhs.v64().at(0));
+            c.mov(rhs_lo, rhs.v64().at(0));
+            c.subs(lhs_lo, lhs_lo, rhs_lo);
 
-        Gp result = c.newInt32();
-        Gp eq_epsilon = c.newInt32();
+            Gp rhs_hi = c.newInt64();
+            Gp lhs_hi = c.newInt64();
+            c.mov(lhs_hi, lhs.v64().at(1));
+            c.mov(rhs_hi, rhs.v64().at(1));
+            c.sbcs(lhs_hi, lhs_hi, rhs_hi);
+
+            Gp result = c.newInt64();
+
+            if (cond == CondCode::kEQ || cond == CondCode::kNE) {
+                c.cset(result, cond);
+                return result;
+            } else {
+                UNREACHABLE("128bit non-eq cmp not supported");
+            }
+            return result;
+        }
+        Gp result = c.newInt64();
+        Gp eq_epsilon = c.newInt64();
 
         cmp_eq_epsilon(c, lhs, rhs);
         c.cset(eq_epsilon, CondCode::kLE);
@@ -453,8 +469,8 @@ namespace questdb::a64 {
             }
         }
 
-        Gp lhs_null = c.newInt32();
-        Gp rhs_null = c.newInt32();
+        Gp lhs_null = c.newInt64();
+        Gp rhs_null = c.newInt64();
 
         cmp_null(c, lhs);
         c.cset(lhs_null, CondCode::kEQ);

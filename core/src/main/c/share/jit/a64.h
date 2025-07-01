@@ -34,7 +34,7 @@ namespace questdb::a64 {
     using namespace asmjit::a64;
     using namespace asmjit::arm;
 
-    // jit_value_t
+    // Reg
     // read_vars_mem(Compiler &c, data_type_t type, int32_t idx, const Gp &vars_ptr) {
     //     auto shift = type_shift(type);
     //     auto type_size = 1 << shift;
@@ -42,7 +42,7 @@ namespace questdb::a64 {
     // }
 
     // // Reads length of variable size column with header stored in data vector (string, binary).
-    // jit_value_t read_mem_varsize(Compiler &c,
+    // Reg read_mem_varsize(Compiler &c,
     //                              uint32_t header_size,
     //                              int32_t column_idx,
     //                              const Gp &data_ptr,
@@ -88,7 +88,7 @@ namespace questdb::a64 {
     // //
     // // Note: unlike read_mem_varsize this method doesn't return the length,
     // //       so it can only be used in NULL checks.
-    // jit_value_t read_mem_varchar_header(Compiler &c,
+    // Reg read_mem_varchar_header(Compiler &c,
     //                                     int32_t column_idx,
     //                                     const Gp &varsize_aux_ptr,
     //                                     const Gp &input_index) {
@@ -106,15 +106,12 @@ namespace questdb::a64 {
     //     return {header, data_type_t::i64, data_kind_t::kMemory};
     // }
 
-    jit_value_t read_mem(
+    Reg read_mem(
             Compiler &c, data_type_t type, int32_t column_idx, const Gp &data_ptr,
             const Gp &varsize_aux_ptr, const Gp &input_index
     ) {
         if (type == data_type_t::varchar_header) {
-            throw std::runtime_error(
-                "Reading varchar_header from memory is not supported on A64"
-            );
-            __builtin_unreachable();
+            UNREACHABLE("Reading varchar_header from memory is not supported on A64");
             // return read_mem_varchar_header(c, column_idx, varsize_aux_ptr, input_index);
         }
 
@@ -130,10 +127,7 @@ namespace questdb::a64 {
                 header_size = 0;
         }
         if (header_size != 0) {
-            throw std::runtime_error(
-                "Reading varsize from memory is not supported on A64"
-            );
-            __builtin_unreachable();
+            UNREACHABLE("Reading varsize from memory is not supported on A64");
             // return read_mem_varsize(c, header_size, column_idx, data_ptr, varsize_aux_ptr, input_index);
         }
 
@@ -143,276 +137,247 @@ namespace questdb::a64 {
         c.ldr(column_address, ptr(data_ptr, 8 * column_idx));
 
         Mem row_data = ptr(column_address, input_index, Shift(ShiftOp::kLSL, type_shift(type)));
-        return {row_data, type, data_kind_t::kMemory};
-    }
-
-    jit_value_t mem2reg(Compiler &c, const jit_value_t &v) {
-        auto type = v.dtype();
-        auto mem = v.op().as<Mem>();
         Gp gp;
         Vec vec;
         switch (type) {
             case data_type_t::i8:
                 gp = c.newInt32();
-                c.ldrsb(gp, mem);
-                return {gp, type, data_kind_t::kMemory};
+                c.ldrsb(gp, row_data);
+                return gp;
 
             case data_type_t::i16:
                 gp = c.newInt32();
-                c.ldrsh(gp, mem);
-                return {gp, type, data_kind_t::kMemory};
+                c.ldrsh(gp, row_data);
+                return gp;
 
             case data_type_t::i32:
                 gp = c.newInt32();
-                c.ldr(gp, mem);
-                return {gp, type, data_kind_t::kMemory};
+                c.ldr(gp, row_data);
+                return gp;
 
             case data_type_t::i64:
                 gp = c.newInt64();
-                c.ldr(gp, mem);
-                return {gp, type, data_kind_t::kMemory};
+                c.ldr(gp, row_data);
+                return gp;
 
             case data_type_t::i128:
                 vec = c.newVecQ();
-                c.ldr(vec, mem);
-                return {vec, type, data_kind_t::kMemory};
+                c.ldr(vec, row_data);
+                return vec;
 
             case data_type_t::f32:
                 vec = c.newVecS();
-                c.ldr(vec, mem);
-                return {vec, type, data_kind_t::kMemory};
+                c.ldr(vec, row_data);
+                return vec;
 
             case data_type_t::f64:
                 vec = c.newVecD();
-                c.ldr(vec, mem);
-                return {vec, type, data_kind_t::kMemory};
+                c.ldr(vec, row_data);
+                return vec;
 
             default:
-                throw std::runtime_error(
-                    "Unsupported data type for mem2reg: " + std::string(data_type_to_string(type))
-                );
-                __builtin_unreachable();
+                UNREACHABLE("Unsupported data type for immediate: %s", data_type_to_string(type));
         }
+        __builtin_unreachable();
     }
 
-    jit_value_t read_imm(Compiler &c, const instruction_t &instr) {
+    Reg read_imm(Compiler &c, const instruction_t &instr) {
         auto type = static_cast<data_type_t>(instr.options);
+        Gp gp;
+        Gp gphi;
+        Vec vec;
         switch (type) {
             case data_type_t::i8:
             case data_type_t::i16:
             case data_type_t::i32:
-            case data_type_t::i64:
-                return {imm(instr.ipayload.lo), type, data_kind_t::kConst};
+                gp = c.newInt32();
+                c.mov(gp, instr.ipayload.lo);
+                return gp;
 
-            // REVISIT 128bit imm
-            // case data_type_t::i128: {
-            //     return {
-            //         c.newConst(ConstPoolScope::kLocal, &instr.ipayload, 16),
-            //         type,
-            //         data_kind_t::kMemory
-            //     };
-            // }
+            case data_type_t::i64:
+                gp = c.newInt64();
+                c.mov(gp, instr.ipayload.lo);
+                return gp;
+
+            case data_type_t::i128:
+                vec = c.newVecQ();
+                int64_t buffer[2];
+                buffer[0] = instr.ipayload.lo;
+                buffer[1] = instr.ipayload.hi;
+                c.ldr(vec, c.newConst(ConstPoolScope::kLocal, buffer, 16));
+                return vec;
 
             case data_type_t::f32:
+                vec = c.newVecS();
+                c.ldr(vec, c.newFloatConst(ConstPoolScope::kLocal, instr.dpayload));
+                return vec;
+
             case data_type_t::f64:
-                return {imm(instr.dpayload), type, data_kind_t::kConst};
+                vec = c.newVecD();
+                c.ldr(vec, c.newDoubleConst(ConstPoolScope::kLocal, instr.dpayload));
+                return vec;
 
             default:
-                throw std::runtime_error(
-                    "Unsupported data type for immediate: " + std::string(data_type_to_string(type))
-                );
-                __builtin_unreachable();
+                UNREACHABLE("Unsupported data type for immediate: %s", data_type_to_string(type));
         }
-    }
-
-    jit_value_t imm2reg(Compiler &c, data_type_t dst_type, const jit_value_t &v) {
-        Imm imm = v.imm();
-        Vec vec;
-        Gp gp;
-        Mem mem;
-
-        if (imm.isInt()) {
-            auto value = imm.valueAs<int64_t>();
-            switch (dst_type) {
-                case data_type_t::f32:
-                    vec = c.newVecS();
-                    mem = c.newFloatConst(ConstPoolScope::kLocal, static_cast<float>(value));
-                    c.ldr(vec, mem);
-                    return {vec, data_type_t::f32, data_kind_t::kConst};
-
-                case data_type_t::f64:
-                    vec = c.newVecD();
-                    mem = c.newDoubleConst(ConstPoolScope::kLocal, static_cast<double>(value));
-                    c.ldr(vec, mem);
-                    return {vec, data_type_t::f64, data_kind_t::kConst};
-
-                case data_type_t::i128:
-                case data_type_t::i64:
-                    gp = c.newInt64();
-                    c.mov(gp, static_cast<int64_t>(value));
-                    return {gp, data_type_t::i64, data_kind_t::kConst};
-
-                default:
-                    gp = c.newInt32();
-                    c.mov(gp, static_cast<int32_t>(value));
-                    return {gp, data_type_t::i32, data_kind_t::kConst};
-            }
-        } else {
-            auto value = imm.valueAs<double>();
-            switch (dst_type) {
-                case data_type_t::i128:
-                case data_type_t::i64:
-                case data_type_t::f64:
-                    vec = c.newVecD();
-                    mem = c.newDoubleConst(ConstPoolScope::kLocal, static_cast<double>(value));
-                    c.ldr(vec, mem);
-                    return {vec, data_type_t::f64, data_kind_t::kConst};
-
-                default:
-                    vec = c.newVecS();
-                    mem = c.newFloatConst(ConstPoolScope::kLocal, static_cast<float>(value));
-                    c.ldr(vec, mem);
-                    return {vec, data_type_t::f32, data_kind_t::kConst};
-            }
-        }
-
         __builtin_unreachable();
     }
 
-    jit_value_t load_register(Compiler &c, data_type_t dst_type, const jit_value_t &v) {
-        if (v.op().isImm()) {
-            return imm2reg(c, dst_type, v);
-        } else if (v.op().isMem()) {
-            return mem2reg(c, v);
+    std::pair<Reg, Reg> coerce_operands(Compiler &c, const Reg& lhs, const Reg &rhs, bool null_check) {
+        RegType  lhs_type  = lhs.type();
+        RegType  rhs_type  = rhs.type();
+        RegGroup lhs_group = lhs.group();
+        RegGroup rhs_group = rhs.group();
+
+        switch(lhs_type) {
+            case RegType::kGp32:
+                switch (rhs_type) {
+                    case RegType::kGp32:
+                        return std::make_pair(lhs, rhs);
+                    case RegType::kGp64:
+                        return std::make_pair(to_int64(c, lhs.as<Gp>(), null_check), rhs);
+                    case RegType::kVec32:
+                        return std::make_pair(to_float(c, lhs.as<Gp>(), null_check), rhs);
+                    case RegType::kVec64:
+                        return std::make_pair(to_double(c, lhs.as<Gp>(), null_check), rhs);
+                    default:
+                        UNREACHABLE("Unsupported type coercion: %s --> %s", reg_type_to_string(lhs_type), reg_type_to_string(rhs_type));
+                }
+            case RegType::kGp64:
+                switch (rhs_type) {
+                    case RegType::kGp32:
+                        return std::make_pair(lhs, to_int64(c, rhs.as<Gp>(), null_check));
+                    case RegType::kGp64:
+                        return std::make_pair(lhs, rhs);
+                    case RegType::kVec32:
+                        return std::make_pair(to_float(c, lhs.as<Gp>(), null_check), rhs);
+                    case RegType::kVec64:
+                        return std::make_pair(to_double(c, lhs.as<Gp>(), null_check), rhs);
+                    default:
+                        UNREACHABLE("Unsupported type coercion: %s --> %s", reg_type_to_string(lhs_type), reg_type_to_string(rhs_type));
+                }
+            case RegType::kVec32:
+                switch (rhs_type) {
+                    case RegType::kGp32:
+                        return std::make_pair(lhs, to_float(c, rhs.as<Gp>(), null_check));
+                    case RegType::kGp64:
+                        return std::make_pair(lhs, to_float(c, rhs.as<Gp>(), null_check));
+                    case RegType::kVec32:
+                        return std::make_pair(lhs, rhs);
+                    case RegType::kVec64:
+                        return std::make_pair(to_double(c, lhs.as<Vec>(), null_check), rhs);
+                    default:
+                        UNREACHABLE("Unsupported type coercion: %s --> %s", reg_type_to_string(lhs_type), reg_type_to_string(rhs_type));
+                }
+            case RegType::kVec64:
+                switch (rhs_type) {
+                    case RegType::kGp32:
+                        return std::make_pair(lhs, to_double(c, rhs.as<Gp>(), null_check));
+                    case RegType::kGp64:
+                        return std::make_pair(lhs, to_double(c, rhs.as<Gp>(), null_check));
+                    case RegType::kVec32:
+                        return std::make_pair(lhs, to_double(c, rhs.as<Vec>(), null_check));
+                    case RegType::kVec64:
+                        return std::make_pair(lhs, rhs);
+                    default:
+                        UNREACHABLE("Unsupported type coercion: %s --> %s", reg_type_to_string(lhs_type), reg_type_to_string(rhs_type));
+                }
+            case RegType::kVec128:
+                return std::make_pair(lhs, rhs);
+            default:
+                UNREACHABLE("Unsupported type coercion: %s --> %s", reg_type_to_string(lhs_type), reg_type_to_string(rhs_type));
+        }
+        __builtin_unreachable();
+    }
+
+    inline Reg dispatch_bin_not(Compiler &c, const Reg &lhs) {
+        if (lhs.isGp()) {
+            return bin_not(c, lhs.as<Gp>());
         } else {
-            return v;
+            UNREACHABLE("bin_not called with an argument that is not a Gp");
         }
     }
 
-    jit_value_t load_register(Compiler &c, const jit_value_t &v) {
-        return load_register(c, v.dtype(), v);
-    }
+    inline Reg dispatch_bin_and(Compiler &c, const Reg &lhs, const Reg &rhs) {
+        if (lhs.group() != rhs.group()) {
+            UNREACHABLE("bin_and called with different groups");
+        }
 
-    std::pair<jit_value_t, jit_value_t> load_registers(Compiler &c, const jit_value_t &lhs, const jit_value_t &rhs) {
-        data_type_t lt;
-        data_type_t rt;
-        if (lhs.op().isImm() && !rhs.op().isImm()) {
-            lt = rhs.dtype();
-            rt = rhs.dtype();
-        } else if (rhs.op().isImm() && !lhs.op().isImm()) {
-            lt = lhs.dtype();
-            rt = lhs.dtype();
+        if (lhs.isGp()) {
+            return bin_and(c, lhs.as<Gp>(), rhs.as<Gp>());
         } else {
-            lt = lhs.dtype();
-            rt = rhs.dtype();
-        }
-        jit_value_t l = load_register(c, lt, lhs);
-        jit_value_t r = load_register(c, rt, rhs);
-        return {l, r};
-    }
-
-    jit_value_t cmp(Compiler &c, const jit_value_t &lhs, const jit_value_t &rhs, CondCode cond, bool null_check) {
-        auto dt = lhs.dtype();
-        auto dk = dst_kind(lhs, rhs);
-        switch (dt) {
-            case data_type_t::i8:
-            case data_type_t::i16:
-            case data_type_t::i32:
-            case data_type_t::string_header:
-            case data_type_t::i64:
-            case data_type_t::binary_header:
-            case data_type_t::varchar_header:
-                return {cmp(c, lhs.gp(), rhs.gp(), cond, null_check), data_type_t::i32, dst_kind(lhs, rhs)};
-            case data_type_t::i128:
-            case data_type_t::f32:
-            case data_type_t::f64:
-                return {cmp(c, lhs.vec(), rhs.vec(), cond), data_type_t::i32, dst_kind(lhs, rhs)};
-            default:
-                throw std::runtime_error(
-                    "Unsupported data type for lhs of cmp: " + std::string(data_type_to_string(dt))
-                );
-                __builtin_unreachable();
+            UNREACHABLE("bin_and called with an argument that is not a Gp");
         }
     }
 
-    jit_value_t neg(Compiler &c, const jit_value_t &lhs, bool null_check) {
-        auto dt = lhs.dtype();
-        auto dk = lhs.dkind();
-        switch (dt) {
-            case data_type_t::i8:
-            case data_type_t::i16:
-            case data_type_t::i32:
-            case data_type_t::i64:
-                return {neg(c, lhs.gp(), null_check), dt, dk};
-            case data_type_t::f32:
-            case data_type_t::f64:
-                return {neg(c, lhs.vec(), null_check), dt, dk};
-            default:
-                __builtin_unreachable();
+    inline Reg dispatch_bin_or(Compiler &c, const Reg &lhs, const Reg &rhs) {
+        if (lhs.group() != rhs.group()) {
+            UNREACHABLE("bin_or called with different groups");
+        }
+
+        if (lhs.isGp()) {
+            return bin_or(c, lhs.as<Gp>(), rhs.as<Gp>());
+        } else {
+            UNREACHABLE("bin_or called with an argument that is not a Gp");
         }
     }
 
-    jit_value_t bin_not(Compiler &c, const jit_value_t &lhs) {
-        auto dt = lhs.dtype();
-        auto dk = lhs.dkind();
-        Gp lhs_gp = lhs.gp().r32();
-        c.eor(lhs_gp, lhs_gp, -1);
-        return {lhs_gp, dt, dk};
-    }
-
-    jit_value_t bin_and(Compiler &c, const jit_value_t &lhs, const jit_value_t &rhs) {
-        auto dt = lhs.dtype();
-        auto dk = dst_kind(lhs, rhs);
-        Gp lhs_gp = lhs.gp().r32();
-        Gp rhs_gp = rhs.gp().r32();
-        c.and_(lhs_gp, lhs_gp, rhs_gp);
-        return {lhs_gp, dt, dk};
-    }
-
-    jit_value_t bin_or(Compiler &c, const jit_value_t &lhs, const jit_value_t &rhs) {
-        auto dt = lhs.dtype();
-        auto dk = dst_kind(lhs, rhs);
-        Gp lhs_gp = lhs.gp().r32();
-        Gp rhs_gp = rhs.gp().r32();
-        c.orr(lhs_gp, lhs_gp, rhs_gp);
-        return {lhs_gp, dt, dk};
-    }
-
-    jit_value_t add(Compiler &c, const jit_value_t &lhs, const jit_value_t &rhs, bool null_check) {
-        auto dt = lhs.dtype();
-        auto dk = dst_kind(lhs, rhs);
-        switch (dt) {
-            case data_type_t::i8:
-            case data_type_t::i16:
-            case data_type_t::i32:
-            case data_type_t::i64:
-                return {add(c, lhs.gp(), rhs.gp(), null_check), dt, dk};
-            case data_type_t::f32:
-            case data_type_t::f64:
-                return {add(c, lhs.vec(), rhs.vec(), null_check), dt, dk};
-            default:
-                __builtin_unreachable();
+    inline Reg dispatch_neg(Compiler &c, const Reg &lhs, bool check_null) {
+        if (lhs.isGp()) {
+            return neg(c, lhs.as<Gp>(), check_null);
+        } else if (lhs.isVec()) {
+            return neg(c, lhs.as<Vec>(), check_null);
+        } else {
+            UNREACHABLE("neg called with an argument that is not a Gp or Vec");
         }
     }
 
-    jit_value_t sub(Compiler &c, const jit_value_t &lhs, const jit_value_t &rhs, bool null_check) {
-        auto dt = lhs.dtype();
-        auto dk = dst_kind(lhs, rhs);
-        switch (dt) {
-            case data_type_t::i8:
-            case data_type_t::i16:
-            case data_type_t::i32:
-            case data_type_t::i64:
-                return {sub(c, lhs.gp(), rhs.gp(), null_check), dt, dk};
-            case data_type_t::f32:
-            case data_type_t::f64:
-                return {sub(c, lhs.vec(), rhs.vec(), null_check), dt, dk};
-            default:
-                __builtin_unreachable();
+    inline Reg dispatch_add(Compiler &c, const Reg &lhs, const Reg &rhs, bool check_null) {
+        if (lhs.group() != rhs.group()) {
+            UNREACHABLE("add called with different groups");
+        }
+
+        if (lhs.isGp() && rhs.isGp()) {
+            return add(c, lhs.as<Gp>(), rhs.as<Gp>(), check_null);
+        } else if  (lhs.isVec() && rhs.isVec()) {
+            return add(c, lhs.as<Vec>(), rhs.as<Vec>(), check_null);
+        } else {
+            UNREACHABLE("add called with an argument that is not a Gp or Vec");
         }
     }
 
-    // jit_value_t mul(Compiler &c, const jit_value_t &lhs, const jit_value_t &rhs, bool null_check) {
+    inline Reg dispatch_sub(Compiler &c, const Reg &lhs, const Reg &rhs, bool check_null) {
+        if (lhs.group() != rhs.group()) {
+            UNREACHABLE("sub called with different groups");
+        }
+
+        if (lhs.isGp() && rhs.isGp()) {
+            return sub(c, lhs.as<Gp>(), rhs.as<Gp>(), check_null);
+        } else if  (lhs.isVec() && rhs.isVec()) {
+            return sub(c, lhs.as<Vec>(), rhs.as<Vec>(), check_null);
+        } else {
+            UNREACHABLE("sub called with an argument that is not a Gp or Vec");
+        }
+    }
+
+    inline Reg dispatch_cmp(Compiler &c, const Reg &lhs, const Reg &rhs, CondCode cond, bool check_null) {
+        if (lhs.group() != rhs.group()) {
+            UNREACHABLE("cmp called with different groups");
+        }
+
+        fprintf(stderr, "cmp called with lhs: %s, rhs: %s\n",
+                reg_type_to_string(lhs.type()), reg_type_to_string(rhs.type()));
+
+        if (lhs.isGp() && rhs.isGp()) {
+            return cmp(c, lhs.as<Gp>(), rhs.as<Gp>(), cond, check_null);
+        } else if (lhs.isVec() && rhs.isVec()) {
+            return cmp(c, lhs.as<Vec>(), rhs.as<Vec>(), cond);
+        } else {
+            UNREACHABLE("cmp called with an argument that is not a Gp or Vec");
+        }
+    }
+
+    // Reg mul(Compiler &c, const Reg &lhs, const Reg &rhs, bool null_check) {
     //     auto dt = lhs.dtype();
     //     auto dk = dst_kind(lhs, rhs);
     //     switch (dt) {
@@ -431,7 +396,7 @@ namespace questdb::a64 {
     //     }
     // }
 
-    // jit_value_t div(Compiler &c, const jit_value_t &lhs, const jit_value_t &rhs, bool null_check) {
+    // Reg div(Compiler &c, const Reg &lhs, const Reg &rhs, bool null_check) {
     //     auto dt = lhs.dtype();
     //     auto dk = dst_kind(lhs, rhs);
     //     switch (dt) {
@@ -450,200 +415,52 @@ namespace questdb::a64 {
     //     }
     // }
 
-    inline bool cvt_null_check(data_type_t type) {
-        return !(type == data_type_t::i8 || type == data_type_t::i16);
-    }
-
-    inline std::pair<jit_value_t, jit_value_t>
-    convert(Compiler &c, const jit_value_t &lhs, const jit_value_t &rhs, bool null_check) {
-        switch (lhs.dtype()) {
-            case data_type_t::i8:
-            case data_type_t::i16:
-            case data_type_t::i32:
-                switch (rhs.dtype()) {
-                    case data_type_t::i8:
-                    case data_type_t::i16:
-                    case data_type_t::i32:
-                        return std::make_pair(lhs, rhs);
-                    case data_type_t::i64:
-                        return std::make_pair(
-                                jit_value_t(
-                                        to_int64(c, lhs.gp().r32(), null_check && cvt_null_check(lhs.dtype())),
-                                        data_type_t::i64,
-                                        lhs.dkind()), rhs);
-                    case data_type_t::f32:
-                        return std::make_pair(
-                                jit_value_t(
-                                        to_float(c, lhs.gp().r32(), null_check && cvt_null_check(lhs.dtype())),
-                                        data_type_t::f32,
-                                        lhs.dkind()), rhs);
-                    case data_type_t::f64:
-                        return std::make_pair(
-                                jit_value_t(
-                                        to_double(c, lhs.gp().r32(), null_check && cvt_null_check(lhs.dtype())),
-                                        data_type_t::f64,
-                                        lhs.dkind()), rhs);
-                    default:
-                        throw std::runtime_error(
-                            "Unsupported data types for convert: " + std::string(data_type_to_string(lhs.dtype())) + " " + std::string(data_type_to_string(rhs.dtype()))
-                        );
-                        __builtin_unreachable();
-                }
-                break;
-            case data_type_t::i64:
-                switch (rhs.dtype()) {
-                    case data_type_t::i8:
-                    case data_type_t::i16:
-                    case data_type_t::i32:
-                        return std::make_pair(lhs,
-                                              jit_value_t(
-                                                      to_int64(c, rhs.gp().r32(),
-                                                                     null_check && cvt_null_check(rhs.dtype())),
-                                                      data_type_t::i64, rhs.dkind()));
-                    case data_type_t::i64:
-                        return std::make_pair(lhs, rhs);
-                    case data_type_t::f32:
-                        return std::make_pair(
-                                jit_value_t(to_double(c, lhs.gp().r64(), null_check), data_type_t::f64,
-                                            lhs.dkind()),
-                                jit_value_t(to_double(c, rhs.vec().v32()), data_type_t::f64, rhs.dkind()));
-                    case data_type_t::f64:
-                        return std::make_pair(
-                                jit_value_t(to_double(c, lhs.gp().r64(), null_check), data_type_t::f64, lhs.dkind()),
-                                rhs);
-                    default:
-                        throw std::runtime_error(
-                            "Unsupported data types for convert: " + std::string(data_type_to_string(lhs.dtype())) + " " + std::string(data_type_to_string(rhs.dtype()))
-                        );
-                        __builtin_unreachable();
-                }
-                break;
-            case data_type_t::f32:
-                switch (rhs.dtype()) {
-                    case data_type_t::i8:
-                    case data_type_t::i16:
-                    case data_type_t::i32:
-                        return std::make_pair(lhs,
-                                              jit_value_t(
-                                                      to_float(c, rhs.gp().r32(),
-                                                                     null_check && cvt_null_check(rhs.dtype())),
-                                                      data_type_t::f32, rhs.dkind()));
-                    case data_type_t::i64:
-                        return std::make_pair(jit_value_t(to_double(c, lhs.vec().v32()), data_type_t::f64, lhs.dkind()),
-                                              jit_value_t(to_double(c, rhs.gp(), null_check), data_type_t::f64,
-                                                          rhs.dkind()));
-                    case data_type_t::f32:
-                        return std::make_pair(lhs, rhs);
-                    case data_type_t::f64:
-                        return std::make_pair(jit_value_t(to_double(c, lhs.vec().v32()), data_type_t::f64, lhs.dkind()),
-                                              rhs);
-                    default:
-                        throw std::runtime_error(
-                            "Unsupported data types for convert: " + std::string(data_type_to_string(lhs.dtype())) + " " + std::string(data_type_to_string(rhs.dtype()))
-                        );
-                        __builtin_unreachable();
-                }
-                break;
-            case data_type_t::f64:
-                switch (rhs.dtype()) {
-                    case data_type_t::i8:
-                    case data_type_t::i16:
-                    case data_type_t::i32:
-                        return std::make_pair(lhs,
-                                              jit_value_t(
-                                                      to_double(c, rhs.gp().r32(),
-                                                                      null_check && cvt_null_check(rhs.dtype())),
-                                                      data_type_t::f64, rhs.dkind()));
-                    case data_type_t::i64:
-                        return std::make_pair(lhs,
-                                              jit_value_t(to_double(c, rhs.gp().r64(), null_check), data_type_t::f64,
-                                                          rhs.dkind()));
-                    case data_type_t::f32:
-                        return std::make_pair(lhs,
-                                              jit_value_t(to_double(c, rhs.vec().v32()),
-                                                          data_type_t::f64,
-                                                          rhs.dkind()));
-                    case data_type_t::f64:
-                        return std::make_pair(lhs, rhs);
-                    default:
-                        throw std::runtime_error(
-                            "Unsupported data types for convert: " + std::string(data_type_to_string(lhs.dtype())) + " " + std::string(data_type_to_string(rhs.dtype()))
-                        );
-                        __builtin_unreachable();
-                }
-                break;
-            case data_type_t::i128:
-            case data_type_t::string_header:
-            case data_type_t::binary_header:
-            case data_type_t::varchar_header:
-                return std::make_pair(lhs, rhs);
-            default:
-                throw std::runtime_error(
-                    "Unsupported data types for convert: " + std::string(data_type_to_string(lhs.dtype())) + " " + std::string(data_type_to_string(rhs.dtype()))
-                );
-                __builtin_unreachable();
-        }
-    }
-
-    inline jit_value_t get_argument(Compiler &c, ZoneStack<jit_value_t> &values) {
-        auto arg = values.pop();
-        return load_register(c, arg);
-    }
-
-    inline std::pair<jit_value_t, jit_value_t>
-    get_arguments(Compiler &c, ZoneStack<jit_value_t> &values, bool null_check) {
-        auto lhs = values.pop();
-        auto rhs = values.pop();
-        auto args = load_registers(c, lhs, rhs);
-        return convert(c, args.first, args.second, null_check);
-    }
-
-    void emit_bin_op(Compiler &c, const instruction_t &instr, ZoneStack<jit_value_t> &values, bool null_check) {
-        auto args = get_arguments(c, values, null_check);
-        jit_value_t lhs = args.first;
-        jit_value_t rhs = args.second;
+    void emit_bin_op(Compiler &c, const instruction_t &instr, ZoneStack<Reg> &values, bool null_check) {
+        std::pair<Reg, Reg> coerced = coerce_operands(c, values.pop(), values.pop(), null_check);
+        Reg lhs = coerced.first;
+        Reg rhs = coerced.second;
 
         char buf_instr[512];
         char buf_lhs[512];
         char buf_rhs[512];
         char buf_ret[512];
-        lhs.to_string(c, buf_lhs);
-        rhs.to_string(c, buf_rhs);
+        reg_to_string(c, lhs, buf_lhs);
+        reg_to_string(c, rhs, buf_rhs);
         instr.to_string(buf_instr);
         comment(c, "                                    >>> ; %s %s %s", buf_lhs, buf_instr, buf_rhs);
 
-        jit_value_t ret;
+        Reg ret;
 
         switch (instr.opcode) {
             case opcodes::And:
-                ret = bin_and(c, lhs, rhs);
+                ret = dispatch_bin_and(c, lhs, rhs);
                 break;
             case opcodes::Or:
-                ret = bin_or(c, lhs, rhs);
+                ret = dispatch_bin_or(c, lhs, rhs);
                 break;
             case opcodes::Eq:
-                ret = cmp(c, lhs, rhs, CondCode::kEQ, null_check);
+                ret = dispatch_cmp(c, lhs, rhs, CondCode::kEQ, null_check);
                 break;
             case opcodes::Ne:
-                ret = cmp(c, lhs, rhs, CondCode::kNE, null_check);
+                ret = dispatch_cmp(c, lhs, rhs, CondCode::kNE, null_check);
                 break;
             case opcodes::Gt:
-                ret = cmp(c, lhs, rhs, CondCode::kGT, null_check);
+                ret = dispatch_cmp(c, lhs, rhs, CondCode::kGT, null_check);
                 break;
             case opcodes::Ge:
-                ret = cmp(c, lhs, rhs, CondCode::kGE, null_check);
+                ret = dispatch_cmp(c, lhs, rhs, CondCode::kGE, null_check);
                 break;
             case opcodes::Lt:
-                ret = cmp(c, lhs, rhs, CondCode::kLT, null_check);
+                ret = dispatch_cmp(c, lhs, rhs, CondCode::kLT, null_check);
                 break;
             case opcodes::Le:
-                ret = cmp(c, lhs, rhs, CondCode::kLE, null_check);
+                ret = dispatch_cmp(c, lhs, rhs, CondCode::kLE, null_check);
                 break;
             case opcodes::Add:
-                ret = add(c, lhs, rhs, null_check);
+                ret = dispatch_add(c, lhs, rhs, null_check);
                 break;
             case opcodes::Sub:
-                ret = sub(c, lhs, rhs, null_check);
+                ret = dispatch_sub(c, lhs, rhs, null_check);
                 break;
             // case opcodes::Mul:
             //     ret = mul(c, lhs, rhs, null_check);
@@ -652,19 +469,16 @@ namespace questdb::a64 {
             //     ret = div(c, lhs, rhs, null_check);
             //     break;
             default:
-                throw std::runtime_error(
-                    "Unsupported operation: " + std::string(opcode_to_string(instr.opcode))
-                );
-                __builtin_unreachable();
+                UNREACHABLE("Unsupported operation: %s", opcode_to_string(instr.opcode));
         }
 
-        ret.to_string(c, buf_ret);
+        reg_to_string(c, ret, buf_ret);
         comment(c, "                                    <<< ; %s", buf_ret);
         values.append(ret);
     }
 
     void
-    emit_code(Compiler &c, const instruction_t *istream, size_t size, ZoneStack<jit_value_t> &values,
+    emit_code(Compiler &c, const instruction_t *istream, size_t size, ZoneStack<Reg> &values,
               bool null_check,
               const Gp &data_ptr,
               const Gp &varsize_aux_ptr,
@@ -676,9 +490,10 @@ namespace questdb::a64 {
             auto type = static_cast<data_type_t>(instr.options);
             auto column_idx  = static_cast<int32_t>(instr.ipayload.lo);
 
-            char buf[512];
-            auto err = std::runtime_error("Unsupported operation: " + std::string(opcode_to_string(instr.opcode)));
-            jit_value_t ret;
+            char buf_ret[512];
+            Reg ret;
+
+            fprintf(stderr, "Processing instruction %zu: %s\n", i, opcode_to_string(instr.opcode));
 
             switch (instr.opcode) {
                 case opcodes::Inv:
@@ -688,37 +503,37 @@ namespace questdb::a64 {
                     return;
 
                 case opcodes::Var:
-                    throw err;
+                    UNREACHABLE("Unsupported operation: %s", opcode_to_string(instr.opcode));
                     // auto type = static_cast<data_type_t>(instr.options);
                     // auto idx  = static_cast<int32_t>(instr.ipayload.lo);
                     // values.append(read_vars_mem(c, type, idx, vars_ptr));
                     // break;
 
                 case opcodes::Mem:
-                    instr.to_string(buf);
-                    comment(c, "                                    >>> ; %s", buf);
+                    instr.to_string(buf_ret);
+                    comment(c, "                                    >>> ; %s", buf_ret);
                     ret = read_mem(c, type, column_idx, data_ptr, varsize_aux_ptr, input_index);
-                    ret.to_string(c, buf);
-                    comment(c, "                                    <<< ; %s", buf);
+                    reg_to_string(c, ret, buf_ret);
+                    comment(c, "                                    <<< ; %s", buf_ret);
                     values.append(ret);
                     break;
 
                 case opcodes::Imm:
-                    instr.to_string(buf);
-                    comment(c, "                                    >>> ; %s", buf);
+                    instr.to_string(buf_ret);
+                    comment(c, "                                    >>> ; %s", buf_ret);
                     ret = read_imm(c, instr);
-                    ret.to_string(c, buf);
-                    comment(c, "                                    <<< ; %s", buf);
+                    reg_to_string(c, ret, buf_ret);
+                    comment(c, "                                    <<< ; %s", buf_ret);
                     values.append(ret);
                     break;
 
                 case opcodes::Neg:
-                    values.append(neg(c, get_argument(c, values), null_check));
+                    values.append(dispatch_neg(c, values.pop(), null_check));
                     break;
 
                 case opcodes::Not:
-                    throw err;
-                    // values.append(bin_not(c, get_argument(c, values)));
+                    UNREACHABLE("Unsupported operation: %s", opcode_to_string(instr.opcode));
+                    // values.append(bin_not(c, values.pop()));
                     // break;
 
                 default:
